@@ -87,7 +87,7 @@ const KIND = {
 };
 const ISSUE_KIND = { transfer: { l: "Transfer", c: "violet" }, repair: { l: "Repair", c: "amber" }, damage: { l: "Damage", c: "red" } };
 const STATUS = {
-  pending: { l: "Awaiting approval", c: "amber" }, approved: { l: "Approved", c: "green" }, rejected: { l: "Rejected", c: "red" },
+  pending: { l: "Awaiting receipt", c: "amber" }, received: { l: "Received", c: "green" }, short: { l: "Received short", c: "amber" }, rejected: { l: "Not received", c: "red" }, approved: { l: "Received", c: "green" },
   cancelled: { l: "Cancelled", c: "" }, at_repair: { l: "At repair", c: "amber" }, partly_returned: { l: "Part returned", c: "cyan" },
   closed: { l: "Closed", c: "green" }, done: { l: "Recorded", c: "red" }, void: { l: "Void", c: "" },
 };
@@ -220,8 +220,8 @@ V.home = () => {
   const byH = M.admin ? S.d.hostels.map((h) => ({ h, n: rows.filter((r) => r.hostelId === h.id).reduce((s, r) => s + r.current, 0) })) : [];
   const maxH = Math.max(1, ...byH.map((x) => x.n));
 
-  const apprList = incoming.length ? `<ul class="list">${incoming.map((i) => `<li><div class="ic violet">${ic("move")}</div><div class="tx"><b>${esc(iName(i.itemId))} × ${nf(i.qty)} ${esc(iUnit(i.itemId))}</b><span>${esc(hName(i.hostelId))} → ${esc(hName(i.toHostelId))} · ${fmtD(i.at)} · <span class="mono">${esc(i.no)}</span></span></div><div class="rt acts">${canWriteHostel(i.toHostelId) ? `<button class="btn sm ok" data-act="approve" data-id="${i.id}">Approve</button><button class="btn sm bad" data-act="reject" data-id="${i.id}">Reject</button>` : ""}</div></li>`).join("")}</ul>`
-    : `<div class="empty">${ic("check")}<div>Nothing waiting for your approval.</div></div>`;
+  const apprList = incoming.length ? `<ul class="list">${incoming.map((i) => `<li><div class="ic violet">${ic("move")}</div><div class="tx"><b>${esc(iName(i.itemId))} × ${nf(i.qty)} ${esc(iUnit(i.itemId))}</b><span>${esc(hName(i.hostelId))} → ${esc(hName(i.toHostelId))} · ${fmtD(i.at)} · <span class="mono">${esc(i.no)}</span></span></div><div class="rt acts">${canWriteHostel(i.toHostelId) ? `<button class="btn sm pri" data-act="receive" data-id="${i.id}">${ic("edit")}Update</button>` : ""}</div></li>`).join("")}</ul>`
+    : `<div class="empty">${ic("check")}<div>Nothing waiting to be received.</div></div>`;
   const recentList = recent.length ? `<ul class="list">${recent.map((t) => { const k = KIND[t.kind]; const icn = { in: "in", transfer_in: "move", transfer_out: "move", repair_out: "wrench", repair_return: "wrench", damaged: "alert" }[t.kind] || "box"; return `<li><div class="ic ${k.c === "blue" ? "blue" : k.c}">${ic(icn)}</div><div class="tx"><b>${esc(iName(t.itemId))}</b><span>${esc(k.l)} · ${esc(hName(t.hostelId))}${t.otherHostelId ? (t.dir > 0 ? " from " : " to ") + esc(hName(t.otherHostelId)) : ""} · ${fmtD(t.at)}</span></div><div class="rt ${t.dir > 0 ? "qin" : "qout"}">${t.dir > 0 ? "+" : "−"}${nf(t.qty)}</div></li>`; }).join("")}</ul>`
     : `<div class="empty">${ic("inbox")}<div>No movements yet.</div></div>`;
   const repList = repairs.length ? `<ul class="list">${repairs.map((i) => `<li><div class="ic amber">${ic("wrench")}</div><div class="tx"><b>${esc(iName(i.itemId))} × ${nf(outstanding(i))}</b><span>${esc(hName(i.hostelId))}${i.place ? " · " + esc(i.place) : ""} · sent ${fmtD(i.at)}</span></div><div class="rt">${isOverdue(i) ? `<span class="b red">Overdue</span>` : i.expectedAt ? `<span class="b">Due ${fmtD(i.expectedAt)}</span>` : ""}</div></li>`).join("")}</ul>`
@@ -234,13 +234,13 @@ V.home = () => {
     + stats([
       { v: nf(total), l: "Items in stock", go: "inventory" },
       { v: nf(new Set(rows.filter((r) => r.current > 0).map((r) => r.itemId)).size), l: "Item types in stock", tone: "cyan", go: "inventory" },
-      { v: nf(M.incoming.length), l: "Waiting for approval", tone: M.incoming.length ? "amber" : "slate", go: "approvals" },
-      { v: nf(M.outgoing.length), l: "Transfers sent, not yet approved", tone: "violet", go: "approvals" },
+      { v: nf(M.incoming.length), l: "Waiting to be received", tone: M.incoming.length ? "amber" : "slate", go: "approvals" },
+      { v: nf(M.outgoing.length), l: "Transfers sent, not yet received", tone: "violet", go: "approvals" },
       { v: nf(atRep), l: overdue ? `At repair · ${overdue} overdue` : "At repair", tone: overdue ? "red" : "amber", go: "repairs" },
       { v: nf(dmgMonth), l: "Damaged this month", tone: "red", go: "damaged" },
       { v: nf(M.exp30), l: "Warranties expiring in 30 days", tone: M.exp30 ? "red" : "green", go: "warranties" },
     ])
-    + `<div class="grid2"><div><div class="card"><div class="ch"><h3>Waiting for your approval</h3><a href="#approvals" class="sub">See all</a></div>${apprList}</div><div class="card"><div class="ch"><h3>Recent movements</h3><a href="#issues" class="sub">Issue register</a></div>${recentList}</div></div>`
+    + `<div class="grid2"><div><div class="card"><div class="ch"><h3>Waiting to be received</h3><a href="#approvals" class="sub">See all</a></div>${apprList}</div><div class="card"><div class="ch"><h3>Recent movements</h3><a href="#issues" class="sub">Issue register</a></div>${recentList}</div></div>`
     + `<div>${hostelBars}<div class="card"><div class="ch"><h3>At repair</h3><a href="#repairs" class="sub">Track repairs</a></div>${repList}</div><div class="card"><div class="ch"><h3>Warranties expiring soon</h3><a href="#warranties" class="sub">All warranties</a></div>${warList}</div></div></div>`;
 };
 function daysBadge(n) {
@@ -406,18 +406,24 @@ function issueCols(withActs = true) {
     { h: "From hostel", t: (i) => hName(i.hostelId), cls: "nw" },
     { h: "Item", t: (i) => iName(i.itemId), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(iName(i.itemId))}</span>` },
     { h: "Qty", t: (i) => i.qty, num: 1, html: (i) => `<b>${nf(i.qty)}</b> <span class="dim">${esc(iUnit(i.itemId))}</span>` },
+    { h: "Received", t: (i) => (i.kind === "transfer" && i.receivedQty != null ? i.receivedQty : ""), num: 1, html: recvHtml },
     { h: "To / sent to", t: (i) => (i.kind === "transfer" ? hName(i.toHostelId) : i.place || ""), cls: "nw" },
     { h: "Status", t: (i) => (STATUS[i.status] || {}).l || i.status, html: (i) => badge(STATUS[i.status], i.status) },
     { h: "By", t: (i) => uName(i.createdBy), cls: "dim nw" },
-    { h: "Notes", t: (i) => [i.notes, i.decisionNote && "Reply: " + i.decisionNote].filter(Boolean).join(" · "), cls: "wrap" },
+    { h: "Notes", t: (i) => [i.notes, i.decisionNote && "Receiver: " + i.decisionNote].filter(Boolean).join(" · "), cls: "wrap" },
   ];
   if (withActs) cols.push({ h: "", t: () => "", nocsv: 1, nosort: 1, html: issueActs });
   return cols;
 }
+function recvHtml(i) {
+  if (i.kind !== "transfer") return "";
+  if (i.receivedQty == null) return i.status === "pending" ? `<span class="dim">—</span>` : "";
+  return i.receivedQty < i.qty ? `<span class="qout">${nf(i.receivedQty)}</span>` : `<span class="qin">${nf(i.receivedQty)}</span>`;
+}
 function issueActs(i) {
   const b = [];
   if (i.kind === "transfer" && i.status === "pending") {
-    if (canWriteHostel(i.toHostelId)) b.push(`<button class="btn sm ok" data-act="approve" data-id="${i.id}">Approve</button><button class="btn sm bad" data-act="reject" data-id="${i.id}">Reject</button>`);
+    if (canWriteHostel(i.toHostelId)) b.push(`<button class="btn sm pri" data-act="receive" data-id="${i.id}">${ic("edit")}Update</button>`);
     if (canWriteHostel(i.hostelId)) b.push(`<button class="btn sm" data-act="cancel" data-id="${i.id}">Cancel</button>`);
   }
   if (i.kind === "repair" && outstanding(i) > 0 && (i.status === "at_repair" || i.status === "partly_returned") && canWriteHostel(i.hostelId)) b.push(`<button class="btn sm ok" data-act="return" data-id="${i.id}">Record return</button>`);
@@ -435,7 +441,7 @@ V.issues = () => {
       { v: nf(n("transfer")), l: "Transfers", tone: "violet" },
       { v: nf(n("repair")), l: "Repairs", tone: "amber" },
       { v: nf(n("damage")), l: "Damage entries", tone: "red" },
-      { v: nf(rows.filter((i) => i.status === "pending").length), l: "Awaiting approval", tone: "cyan" },
+      { v: nf(rows.filter((i) => i.status === "pending").length), l: "Awaiting receipt", tone: "cyan" },
       { v: nf(rows.filter((i) => !["void", "rejected", "cancelled"].includes(i.status)).reduce((s, i) => s + i.qty, 0)), l: "Quantity issued", tone: "slate" },
     ])
     + filterBar("issues", [
@@ -454,25 +460,42 @@ V.approvals = () => {
   const show = f.show || "in";
   const all = S.d.issues.filter((i) => i.kind === "transfer");
   let rows = show === "in" ? M.incoming : show === "out" ? M.outgoing : all;
-  rows = rows.filter((i) => (!f.h || i.hostelId === +f.h || i.toHostelId === +f.h) && inRange(i.at, f) && match(f.q, i.no, iName(i.itemId), hName(i.hostelId), hName(i.toHostelId), i.notes));
+  rows = rows.filter((i) => (!f.h || i.hostelId === +f.h || i.toHostelId === +f.h) && inRange(i.at, f) && match(f.q, i.no, iName(i.itemId), hName(i.hostelId), hName(i.toHostelId), i.notes, i.decisionNote));
   const since = addDays(today(), -30);
-  const recent = all.filter((i) => i.decidedAt && isoOf(new Date(i.decidedAt)) >= since);
-  const cols = issueCols().filter((c) => c.h !== "Type" && c.h !== "To / sent to");
-  cols.splice(4, 0, { h: "To hostel", t: (i) => hName(i.toHostelId), cls: "nw" });
-  return head("Approvals", "Transfers between hostels. Stock moves only when the receiving hostel approves.", csvBtn("approvals"))
+  const recent = all.filter((i) => i.decidedAt && isoOf(new Date(i.decidedAt)) >= since && i.receivedQty != null);
+  const short = (i) => (i.receivedQty == null ? "" : i.qty - i.receivedQty);
+  const cols = [
+    { h: "No.", t: (i) => i.no, html: (i) => `<span class="mono">${esc(i.no)}</span>`, cls: "nw" },
+    { h: "Sent on", t: (i) => i.at, html: (i) => fmtD(i.at), cls: "nw" },
+    { h: "From hostel", t: (i) => hName(i.hostelId), cls: "nw" },
+    { h: "To hostel", t: (i) => hName(i.toHostelId), cls: "nw" },
+    { h: "Item", t: (i) => iName(i.itemId), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.toHostelId}" data-i="${i.itemId}">${esc(iName(i.itemId))}</span>` },
+    { h: "Unit", t: (i) => iUnit(i.itemId), cls: "dim" },
+    { h: "Send qty", t: (i) => i.qty, num: 1, html: (i) => `<b>${nf(i.qty)}</b>` },
+    { h: "Received qty", t: (i) => i.receivedQty ?? "", num: 1, html: recvHtml },
+    { h: "Short", t: short, num: 1, html: (i) => (short(i) ? `<span class="qout">${nf(short(i))}</span>` : i.receivedQty == null ? "" : "0") },
+    { h: "Status", t: (i) => (STATUS[i.status] || {}).l || i.status, html: (i) => badge(STATUS[i.status], i.status) },
+    { h: "Sent by", t: (i) => uName(i.createdBy), cls: "dim nw" },
+    { h: "Updated", t: (i) => (i.decidedAt ? fmtTs(i.decidedAt) + " · " + uName(i.decidedBy) : ""), cls: "dim nw" },
+    { h: "Notes", t: (i) => [i.notes, i.decisionNote && "Receiver: " + i.decisionNote].filter(Boolean).join(" · "), cls: "wrap" },
+    { h: "", t: () => "", nocsv: 1, nosort: 1, html: issueActs },
+  ];
+  return head("Approvals", "Transfers between hostels. The receiving hostel updates how many arrived; only that quantity moves.", csvBtn("approvals"))
     + stats([
-      { v: nf(M.incoming.length), l: "Waiting for my approval", tone: M.incoming.length ? "amber" : "slate", go: "approvals?in" },
+      { v: nf(M.incoming.length), l: "Waiting for me to receive", tone: M.incoming.length ? "amber" : "slate", go: "approvals?in" },
       { v: nf(M.outgoing.length), l: "Sent, awaiting the other hostel", tone: "violet", go: "approvals?out" },
-      { v: nf(recent.filter((i) => i.status === "approved").length), l: "Approved, last 30 days", tone: "green" },
-      { v: nf(recent.filter((i) => i.status === "rejected").length), l: "Rejected, last 30 days", tone: "red" },
+      { v: nf(recent.filter((i) => i.status === "received" || i.status === "approved").length), l: "Received in full, last 30 days", tone: "green" },
+      { v: nf(recent.filter((i) => i.status === "short" || i.status === "rejected").length), l: "Short or not received, last 30 days", tone: "red" },
+      { v: nf(rows.reduce((s, i) => s + i.qty, 0)), l: "Send qty (shown)", tone: "cyan" },
+      { v: nf(rows.reduce((s, i) => s + (i.receivedQty || 0), 0)), l: "Received qty (shown)", tone: "green" },
     ])
     + filterBar("approvals", [
       { k: "q", type: "search", ph: "Search no., item or hostel" },
-      { k: "show", l: "Show", opts: [["out", "Sent by " + (M.admin ? "hostels" : "us") + ", awaiting approval"], ["all", "All transfers"]], all: "Waiting for my approval" },
+      { k: "show", l: "Show", opts: [["out", "Sent by " + (M.admin ? "hostels" : "us") + ", not yet received"], ["all", "All transfers"]], all: "Waiting for me to receive" },
       { k: "h", l: "Hostel", opts: S.d.hostels.map((h) => [h.id, h.name]), all: "All hostels", hide: !M.admin },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
     ])
-    + table("approvals", cols, rows, { csv: "transfers", emptyIcon: "check", empty: show === "in" ? "Nothing waiting for your approval." : "No transfers to show." });
+    + table("approvals", cols, rows, { csv: "transfers", emptyIcon: "check", empty: show === "in" ? "Nothing waiting to be received." : "No transfers to show." });
 };
 
 /* ---------- repairs ---------- */
@@ -679,7 +702,7 @@ function masterView(key) {
 V.settings = () => {
   const s = S.d.settings || {};
   return head("Settings", "Notifications for transfers and repairs")
-    + `<div class="card" style="max-width:760px"><div class="ch"><h3>Notifications</h3><span class="sub">Sent when items are transferred, approved, rejected, sent for repair or returned</span></div>
+    + `<div class="card" style="max-width:760px"><div class="ch"><h3>Notifications</h3><span class="sub">Sent when items are transferred, received, sent for repair or returned</span></div>
     <form id="setForm" class="db" style="padding:18px 20px">
       <div class="fld"><label class="chk"><input type="checkbox" name="emailOn" ${s.emailOn ? "checked" : ""}> Send email notifications</label><div class="help">Emails go to all Admins and to the wardens of the hostels involved, plus any extra addresses below.</div></div>
       <div class="fld half"><label>From address</label><input name="emailFrom" type="email" value="${esc(s.emailFrom)}" placeholder="no-reply@yourdomain.com"><div class="help">Use a mailbox on your own domain so emails aren't marked as spam.</div></div>
@@ -728,7 +751,7 @@ function openForm(o) {
       else if (fd.type === "textarea") ctl = `<textarea id="f_${fd.k}" name="${fd.k}" placeholder="${esc(fd.ph || "")}">${esc(v)}</textarea>`;
       else if (fd.type === "check") return `<div class="fld"><label class="chk"><input type="checkbox" name="${fd.k}" ${v ? "checked" : ""}> ${esc(fd.l)}</label>${helpH}</div>`;
       else if (fd.type === "seg") ctl = `<input type="hidden" name="${fd.k}" value="${esc(v)}"><div class="seg">${fd.opts(vals).map(([ov, ol, icn]) => `<button type="button" data-seg="${fd.k}" data-v="${esc(ov)}" class="${String(ov) === String(v) ? "on" : ""}">${icn ? ic(icn) : ""}${esc(ol)}</button>`).join("")}</div>`;
-      else ctl = `<input id="f_${fd.k}" name="${fd.k}" type="${fd.type || "text"}" value="${esc(v)}" placeholder="${esc(fd.ph || "")}" ${fd.type === "number" ? 'min="0" step="1" inputmode="numeric"' : ""} ${fd.list ? `list="l_${fd.k}"` : ""} autocomplete="${fd.type === "password" ? "new-password" : "off"}">${fd.list ? `<datalist id="l_${fd.k}">${fd.list.map((x) => `<option value="${esc(x)}">`).join("")}</datalist>` : ""}`;
+      else ctl = `<input id="f_${fd.k}" name="${fd.k}" type="${fd.type || "text"}" value="${esc(v)}" placeholder="${esc(fd.ph || "")}" ${fd.type === "number" ? 'min="0" step="1" inputmode="numeric"' : ""} ${fd.ro ? "readonly tabindex=\"-1\" style=\"background:var(--line2);font-weight:700\"" : ""} ${fd.list ? `list="l_${fd.k}"` : ""} autocomplete="${fd.type === "password" ? "new-password" : "off"}">${fd.list ? `<datalist id="l_${fd.k}">${fd.list.map((x) => `<option value="${esc(x)}">`).join("")}</datalist>` : ""}`;
       return `<div class="fld${fd.half ? " half" : ""}">${lab}${ctl}${helpH}</div>`;
     }).join("") + `<div class="err"></div>`;
   };
@@ -825,7 +848,7 @@ function issueForm(kind = "transfer") {
       { k: "at", l: "Date", type: "date", val: today(), half: 1 },
       { k: "toHostelId", l: "To hostel", type: "select", blank: "— Choose hostel —", req: 1, show: (v) => v.kind === "transfer",
         opts: (v) => S.d.hostels.filter((h) => h.active && h.id !== +v.hostelId).map((h) => [h.id, h.name]),
-        help: "The receiving hostel will see this under Approvals. Stock moves once they approve." },
+        help: "The receiving hostel will see this under Approvals. Stock moves when they update the quantity received." },
       { k: "place", l: "Sent to (repairer)", ph: "e.g. Sharma Electricals", show: (v) => v.kind === "repair", half: 1, list: [...new Set(S.d.issues.filter((i) => i.kind === "repair" && i.place).map((i) => i.place))] },
       { k: "expectedAt", l: "Expected back", type: "date", show: (v) => v.kind === "repair", half: 1 },
       { k: "dplace", l: "Sent to after damage (optional)", type: "select", blank: "— Not sent anywhere —", show: (v) => v.kind === "damage", opts: () => S.d.damagePlaces.map((p) => [p.name, p.name]) },
@@ -836,6 +859,30 @@ function issueForm(kind = "transfer") {
     onSubmit: async (v) => {
       const r = await api("issue.create", { kind: v.kind, hostelId: +v.hostelId, itemId: +v.itemId, qty: +v.qty, at: v.at, toHostelId: v.toHostelId ? +v.toHostelId : null, place: v.kind === "damage" ? v.dplace : v.place, expectedAt: v.expectedAt, notes: v.notes });
       return v.kind === "transfer" ? `${r.issue.no} sent to ${hName(+v.toHostelId)} for approval` : v.kind === "repair" ? `${r.issue.no}: sent for repair` : `${r.issue.no}: marked damaged`;
+    },
+  });
+}
+
+/* ---------- transfer receipt form ---------- */
+function receiveForm(id) {
+  const i = S.d.issues.find((x) => x.id === id);
+  if (!i) return;
+  const u = iUnit(i.itemId);
+  openForm({
+    title: "Update received quantity", sub: `<span class="mono">${esc(i.no)}</span> · ${esc(iName(i.itemId))} · ${esc(hName(i.hostelId))} → ${esc(hName(i.toHostelId))}`,
+    fields: [
+      { k: "info", type: "info", html: () => `${esc(hName(i.hostelId))} sent <b>${nf(i.qty)} ${esc(u)}</b> on ${fmtD(i.at)}${i.notes ? ` · “${esc(i.notes)}”` : ""}. Sent by ${esc(uName(i.createdBy))}.` },
+      { k: "sent", l: "Send qty", type: "text", half: 1, val: String(i.qty), ro: 1 },
+      { k: "receivedQty", l: "Received qty", type: "number", half: 1, req: 1, val: String(i.qty),
+        help: (v) => { const r = +v.receivedQty; if (v.receivedQty === "" || isNaN(r)) return ""; if (r > i.qty) return { t: `Can't be more than ${nf(i.qty)}`, c: "warn" }; if (r === i.qty) return { t: "All received", c: "good" }; if (r === 0) return { t: "Nothing received: all stay with the sending hostel", c: "warn" }; return { t: `${nf(i.qty - r)} short: they stay with the sending hostel`, c: "warn" }; } },
+      { k: "note", l: (v) => (+v.receivedQty < i.qty ? "Reason for the difference" : "Note (optional)"), type: "textarea", req: 0, ph: "e.g. 2 broken in transit" },
+    ],
+    submit: "Update",
+    onSubmit: async (v) => {
+      const r = +v.receivedQty;
+      if (r < i.qty && !String(v.note || "").trim()) throw { message: "Fewer items arrived than were sent. Add a note explaining the difference." };
+      await api("issue.receive", { id, receivedQty: r, note: v.note });
+      return r === i.qty ? `${i.no}: ${nf(r)} ${u} received — stock updated` : r === 0 ? `${i.no}: marked not received` : `${i.no}: ${nf(r)} of ${nf(i.qty)} received — stock updated`;
     },
   });
 }
@@ -905,17 +952,7 @@ const ACT = {
   clearf: (el) => { S.f[el.dataset.key] = {}; S.page[el.dataset.key] = 0; render(); },
   ledger: (el) => { S.ledger = { h: el.dataset.h || "", i: el.dataset.i }; S.f.ledger = {}; go("ledger"); },
   invHostel: (el) => { S.f.inventory = { h: el.dataset.id }; go("inventory"); },
-  approve: async (el) => {
-    const i = S.d.issues.find((x) => x.id === +el.dataset.id);
-    if (!i || !(await confirmBox("Approve transfer?", `<b>${esc(iName(i.itemId))} × ${nf(i.qty)}</b> from ${esc(hName(i.hostelId))} will be added to ${esc(hName(i.toHostelId))}'s stock.`, "Approve"))) return;
-    await run(() => api("issue.decide", { id: i.id, decision: "approve" }), `${i.no} approved — stock updated`);
-  },
-  reject: (el) => {
-    const i = S.d.issues.find((x) => x.id === +el.dataset.id);
-    openForm({ title: "Reject transfer", sub: `<span class="mono">${esc(i.no)}</span> · ${esc(iName(i.itemId))} × ${nf(i.qty)} from ${esc(hName(i.hostelId))}`, danger: true, submit: "Reject",
-      fields: [{ k: "note", l: "Reason", type: "textarea", req: 1, ph: "Tell the sending hostel why" }],
-      onSubmit: async (v) => { await api("issue.decide", { id: i.id, decision: "reject", note: v.note }); return `${i.no} rejected`; } });
-  },
+  receive: (el) => receiveForm(+el.dataset.id),
   cancel: async (el) => {
     const i = S.d.issues.find((x) => x.id === +el.dataset.id);
     if (await confirmBox("Cancel this transfer?", `${esc(i.no)} to ${esc(hName(i.toHostelId))} will be withdrawn. No stock has moved yet.`, "Cancel transfer", true)) await run(() => api("issue.cancel", { id: i.id }), "Transfer cancelled");

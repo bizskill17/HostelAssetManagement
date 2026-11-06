@@ -1,6 +1,6 @@
 <?php
 /**
- * Sample data: 4 hostels, 10 items, opening stock, receipts, transfers (approved and pending),
+ * Sample data: 4 hostels, 10 items, opening stock, receipts, transfers (received, short and pending),
  * repairs (open, part-returned, closed), damage and warranties. Every row is marked sample = 1.
  * Runs only when no sample hostel exists yet, so it is safe to repeat.
  * Sample wardens are created without passwords, so they cannot sign in until an Admin sets one.
@@ -45,10 +45,10 @@ function seedSample(PDO $db): array
             [$H[$h], $I[$item], $kind, $dir, $qty, $more['issue'] ?? null, isset($more['other']) ? $H[$more['other']] : null, $more['party'] ?? '', $at, $more['notes'] ?? '', $now]);
     };
     $issue = function (string $kind, string $status, string $h, string $item, int $qty, string $at, array $more = []) use ($ins, $H, $I, $now): int {
-        return $ins("INSERT INTO ha_issues (kind, status, hostel_id, to_hostel_id, item_id, qty, place, at, expected_at, notes, returned_qty, scrapped_qty, created_at, decided_at, decision_note, sample)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
+        return $ins("INSERT INTO ha_issues (kind, status, hostel_id, to_hostel_id, item_id, qty, place, at, expected_at, notes, returned_qty, scrapped_qty, received_qty, created_at, decided_at, decision_note, sample)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
             [$kind, $status, $H[$h], isset($more['to']) ? $H[$more['to']] : null, $I[$item], $qty, $more['place'] ?? '', $at, $more['expected'] ?? null,
-                $more['notes'] ?? '', $more['returned'] ?? 0, $more['scrapped'] ?? 0, $now, $status === 'pending' ? null : $now, $more['decision'] ?? '']);
+                $more['notes'] ?? '', $more['returned'] ?? 0, $more['scrapped'] ?? 0, $more['received'] ?? null, $now, $status === 'pending' ? null : $now, $more['decision'] ?? '']);
     };
 
     // Opening stock, 60 days ago.
@@ -69,17 +69,17 @@ function seedSample(PDO $db): array
     $tx('GGH', 'Plastic chair', 'in', 1, 30, $d(25), ['party' => 'Supreme Store']);
     $tx('YGH', 'Bedsheet set', 'in', 1, 60, $d(12), ['party' => 'Linen House']);
 
-    // Approved transfers.
-    foreach ([['NBH', 'KBH', 'Single bed, steel', 15, 35], ['NBH', 'KBH', 'Mattress 4in foam', 15, 35], ['GGH', 'YGH', 'Plastic chair', 12, 20]] as [$f, $t, $item, $q, $ago]) {
-        $id = $issue('transfer', 'approved', $f, $item, $q, $d($ago), ['to' => $t, 'notes' => 'Extra rooms opened']);
-        $tx($f, $item, 'transfer_out', -1, $q, $d($ago - 1), ['issue' => $id, 'other' => $t]);
-        $tx($t, $item, 'transfer_in', 1, $q, $d($ago - 1), ['issue' => $id, 'other' => $f]);
+    // Received transfers (one arrived short: 2 chairs broke on the way).
+    foreach ([['NBH', 'KBH', 'Single bed, steel', 15, 15, 35, ''], ['NBH', 'KBH', 'Mattress 4in foam', 15, 15, 35, ''], ['GGH', 'YGH', 'Plastic chair', 12, 10, 20, '2 chairs broken in transit']] as [$f, $t, $item, $q, $got, $ago, $why]) {
+        $id = $issue('transfer', $got < $q ? 'short' : 'received', $f, $item, $q, $d($ago), ['to' => $t, 'notes' => 'Extra rooms opened', 'received' => $got, 'decision' => $why]);
+        $tx($f, $item, 'transfer_out', -1, $got, $d($ago - 1), ['issue' => $id, 'other' => $t]);
+        $tx($t, $item, 'transfer_in', 1, $got, $d($ago - 1), ['issue' => $id, 'other' => $f]);
     }
     // Pending transfers.
     $issue('transfer', 'pending', 'NBH', 'Study table', 8, $d(1), ['to' => 'YGH', 'notes' => 'For new block wing']);
     $issue('transfer', 'pending', 'KBH', 'Ceiling fan 48in', 4, $d(0), ['to' => 'GGH']);
-    // Rejected transfer.
-    $issue('transfer', 'rejected', 'YGH', 'Pillow', 10, $d(15), ['to' => 'KBH', 'decision' => 'Not needed, we have enough']);
+    // Transfer where nothing arrived.
+    $issue('transfer', 'rejected', 'YGH', 'Pillow', 10, $d(15), ['to' => 'KBH', 'received' => 0, 'decision' => 'Not delivered, sent back']);
 
     // Repairs.
     $id = $issue('repair', 'at_repair', 'NBH', 'Ceiling fan 48in', 5, $d(9), ['place' => 'Sharma Electricals', 'expected' => $d(2), 'notes' => 'Regulator and capacitor']);

@@ -40,7 +40,7 @@ Set them up under **Settings**:
 - **Email**: goes to all Admins, the wardens of both hostels involved, and any extra addresses you add. It uses Hostinger's PHP mail, so set the **From** address to a mailbox on your domain.
 - **Telegram**: create a bot with @BotFather, add it to your group, then paste the bot token and the group chat ID (it starts with `-100`).
 
-Notifications are sent when a transfer is sent, approved or rejected, and when items are sent for repair or come back. Use **Send a test** to check both.
+Notifications are sent when a transfer is sent and when the receiving hostel updates the quantity received, and when items are sent for repair or come back. Use **Send a test** to check both.
 
 ## What's in the repo
 

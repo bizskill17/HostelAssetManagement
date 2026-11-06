@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 function ensureSchema(PDO $db): void
 {
@@ -68,7 +68,7 @@ function ensureSchema(PDO $db): void
             hostel_id INT NOT NULL, to_hostel_id INT NULL, item_id INT NOT NULL, qty INT NOT NULL,
             place VARCHAR(160) NOT NULL DEFAULT '', at DATE NOT NULL, expected_at DATE NULL,
             notes VARCHAR(500) NOT NULL DEFAULT '',
-            returned_qty INT NOT NULL DEFAULT 0, scrapped_qty INT NOT NULL DEFAULT 0,
+            returned_qty INT NOT NULL DEFAULT 0, scrapped_qty INT NOT NULL DEFAULT 0, received_qty INT NULL,
             created_by INT NULL, created_at BIGINT NOT NULL,
             decided_by INT NULL, decided_at BIGINT NULL, decision_note VARCHAR(500) NOT NULL DEFAULT '',
             sample TINYINT(1) NOT NULL DEFAULT 0,
@@ -87,6 +87,13 @@ function ensureSchema(PDO $db): void
     ];
     foreach ($tables as $sql) {
         $db->exec($sql);
+    }
+
+    // v2: transfers record how many actually arrived.
+    if (!$db->query("SHOW COLUMNS FROM ha_issues LIKE 'received_qty'")->fetch()) {
+        $db->exec("ALTER TABLE ha_issues ADD COLUMN received_qty INT NULL AFTER scrapped_qty");
+        $db->exec("UPDATE ha_issues SET received_qty = qty, status = 'received' WHERE kind = 'transfer' AND status = 'approved'");
+        $db->exec("UPDATE ha_issues SET received_qty = 0 WHERE kind = 'transfer' AND status = 'rejected'");
     }
 
     $defaults = [

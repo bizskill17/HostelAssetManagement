@@ -1,6 +1,6 @@
 <?php
 /**
- * Email and Telegram notifications for transfers and repairs.
+ * Email and Telegram notifications for transfers (sent / received) and repairs.
  * Who gets emails: all active Admins, the wardens of both hostels involved, and any extra
  * addresses in Settings. Telegram posts one message to the group set in Settings.
  * A failed notification never blocks the stock change; it is written to the PHP error log.
@@ -39,13 +39,23 @@ function notifyIssue(string $event, array $i, array $by, array $extra = []): voi
                 $subject = "Transfer $no: $fromName → $toName needs approval";
                 $lines = ["$fromName is sending $what to $toName.", "$toName: please approve when the items arrive."];
                 break;
-            case 'transfer_approved':
-                $subject = "Transfer $no approved by $toName";
-                $lines = ["$toName received $what from $fromName.", "Stock has moved from $fromName to $toName."];
-                break;
-            case 'transfer_rejected':
-                $subject = "Transfer $no rejected by $toName";
-                $lines = ["$toName rejected $what from $fromName.", 'Reason: ' . $i['decision_note']];
+            case 'transfer_received':
+                $got = (int) $i['received_qty'];
+                $sent = (int) $i['qty'];
+                $unit = $item['unit'] ?? '';
+                if ($got === 0) {
+                    $subject = "Transfer $no: nothing received at $toName";
+                    $lines = ["$toName reports none of the $what from $fromName arrived.", "The $sent $unit stay on $fromName's stock."];
+                } elseif ($got < $sent) {
+                    $subject = "Transfer $no: $toName received $got of $sent";
+                    $lines = ["$toName received $got of $sent $unit of " . ($item['name'] ?? 'item') . " from $fromName.", ($sent - $got) . " $unit short — they stay on $fromName's stock."];
+                } else {
+                    $subject = "Transfer $no received by $toName";
+                    $lines = ["$toName received $what from $fromName.", "Stock has moved from $fromName to $toName."];
+                }
+                if ($i['decision_note'] !== '') {
+                    $lines[] = 'Note from ' . $toName . ': ' . $i['decision_note'];
+                }
                 break;
             case 'repair_sent':
                 $subject = "Repair $no: $what sent from $fromName";
@@ -62,7 +72,7 @@ function notifyIssue(string $event, array $i, array $by, array $extra = []): voi
             default:
                 return;
         }
-        if ($i['notes'] !== '' && $event !== 'transfer_rejected') {
+        if ($i['notes'] !== '') {
             $lines[] = 'Notes: ' . $i['notes'];
         }
         $lines[] = 'By: ' . $by['name'];

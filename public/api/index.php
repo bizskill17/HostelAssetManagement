@@ -200,7 +200,7 @@ function shapeIssue(array $r): array
         'hostelId' => (int) $r['hostel_id'], 'toHostelId' => $r['to_hostel_id'] === null ? null : (int) $r['to_hostel_id'],
         'itemId' => (int) $r['item_id'], 'qty' => (int) $r['qty'], 'place' => $r['place'], 'at' => $r['at'],
         'expectedAt' => $r['expected_at'], 'notes' => $r['notes'], 'returnedQty' => (int) $r['returned_qty'],
-        'scrappedQty' => (int) $r['scrapped_qty'], 'createdBy' => $r['created_by'] === null ? null : (int) $r['created_by'],
+        'scrappedQty' => (int) $r['scrapped_qty'], 'receivedQty' => $r['received_qty'] === null ? null : (int) $r['received_qty'], 'createdBy' => $r['created_by'] === null ? null : (int) $r['created_by'],
         'createdAt' => (int) $r['created_at'], 'decidedBy' => $r['decided_by'] === null ? null : (int) $r['decided_by'],
         'decidedAt' => $r['decided_at'] === null ? null : (int) $r['decided_at'], 'decisionNote' => $r['decision_note'],
     ];
@@ -537,48 +537,53 @@ try {
             out(['ok' => true, 'issue' => shapeIssue($issue)]);
         }
 
-        case 'issue.decide': {
-            // The receiving hostel approves (stock moves) or rejects (nothing moves) a transfer.
+        case 'issue.receive': {
+            // The receiving hostel updates how many actually arrived. Only the received quantity moves:
+            // it leaves the sending hostel and is added to the receiving one. Any shortfall stays on the
+            // sending hostel's books (they can mark it damaged if it was lost). 0 received = not received.
             $u = requireUser();
             $b = body();
             $i = issueRow(idOrNull($b['id'] ?? null) ?? 0);
-            $approve = ($b['decision'] ?? '') === 'approve';
+            $recvQty = int0($b['receivedQty'] ?? -1);
             $note = str($b['note'] ?? '', 500);
             if ($i['kind'] !== 'transfer' || $i['status'] !== 'pending') {
-                fail('This transfer is no longer waiting for approval.');
+                fail('This transfer has already been updated.');
             }
             if (!canHostel($u, (int) $i['to_hostel_id'])) {
-                fail('Only the receiving hostel can approve or reject this transfer.', 403, 'forbidden');
+                fail('Only the receiving hostel can update this transfer.', 403, 'forbidden');
             }
-            if (!$approve && $note === '') {
-                fail('Give a reason for rejecting.');
+            if ($recvQty < 0 || $recvQty > (int) $i['qty']) {
+                fail('Received quantity must be between 0 and ' . (int) $i['qty'] . '.');
+            }
+            if ($recvQty < (int) $i['qty'] && $note === '') {
+                fail('Fewer items arrived than were sent. Add a note explaining the difference.');
             }
             db()->beginTransaction();
             lockHostel((int) $i['hostel_id']);
             $i = issueRow((int) $i['id']);
             if ($i['status'] !== 'pending') {
                 db()->rollBack();
-                fail('This transfer is no longer waiting for approval.');
+                fail('This transfer has already been updated.');
             }
-            if ($approve) {
+            if ($recvQty > 0) {
                 $avail = onHand((int) $i['hostel_id'], (int) $i['item_id']) - pendingOut((int) $i['hostel_id'], (int) $i['item_id'], (int) $i['id']);
-                if ((int) $i['qty'] > $avail) {
+                if ($recvQty > $avail) {
                     db()->rollBack();
-                    fail("The sending hostel now has only $avail available, so this can't be approved. Ask them to cancel and resend.");
+                    fail("The sending hostel now has only $avail in stock, so $recvQty can't be received. Ask them to cancel and resend.");
                 }
-                $day = today();
-                $common = ['item_id' => (int) $i['item_id'], 'qty' => (int) $i['qty'], 'issue_id' => (int) $i['id'], 'at' => $day, 'notes' => $i['notes']];
+                $common = ['item_id' => (int) $i['item_id'], 'qty' => $recvQty, 'issue_id' => (int) $i['id'], 'at' => today(), 'notes' => $i['notes']];
                 addTxn($common + ['hostel_id' => (int) $i['hostel_id'], 'kind' => 'transfer_out', 'dir' => -1, 'other_hostel_id' => (int) $i['to_hostel_id']], $u);
                 addTxn($common + ['hostel_id' => (int) $i['to_hostel_id'], 'kind' => 'transfer_in', 'dir' => 1, 'other_hostel_id' => (int) $i['hostel_id']], $u);
             }
-            q("UPDATE ha_issues SET status=?, decided_by=?, decided_at=?, decision_note=? WHERE id=?", [$approve ? 'approved' : 'rejected', $u['id'], nowMs(), $note, $i['id']]);
+            $status = $recvQty === 0 ? 'rejected' : ($recvQty < (int) $i['qty'] ? 'short' : 'received');
+            q("UPDATE ha_issues SET status=?, received_qty=?, decided_by=?, decided_at=?, decision_note=? WHERE id=?", [$status, $recvQty, $u['id'], nowMs(), $note, $i['id']]);
             db()->commit();
-            notifyIssue($approve ? 'transfer_approved' : 'transfer_rejected', issueRow((int) $i['id']), $u);
+            notifyIssue('transfer_received', issueRow((int) $i['id']), $u);
             out(['ok' => true]);
         }
 
         case 'issue.cancel': {
-            // The sending hostel withdraws a transfer that hasn't been approved yet.
+            // The sending hostel withdraws a transfer the other hostel hasn't updated yet.
             $u = requireUser();
             $i = issueRow(idOrNull(body()['id'] ?? null) ?? 0);
             if ($i['kind'] !== 'transfer' || $i['status'] !== 'pending') {
@@ -600,10 +605,10 @@ try {
             }
             db()->beginTransaction();
             lockHostel((int) $i['hostel_id']);
-            if ($i['kind'] === 'transfer' && $i['status'] === 'approved') {
+            if ($i['kind'] === 'transfer' && in_array($i['status'], ['received', 'short'], true)) {
                 $recv = (int) $i['to_hostel_id'];
                 lockHostel($recv);
-                if (onHand($recv, (int) $i['item_id']) - pendingOut($recv, (int) $i['item_id']) < (int) $i['qty']) {
+                if (onHand($recv, (int) $i['item_id']) - pendingOut($recv, (int) $i['item_id']) < (int) $i['received_qty']) {
                     db()->rollBack();
                     fail('The receiving hostel has already issued some of these items, so this transfer can\'t be voided.');
                 }
