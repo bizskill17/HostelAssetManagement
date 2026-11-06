@@ -1,21 +1,15 @@
 <?php
 /**
- * Hostel Asset Movement Tracker — JSON API for Hostinger (PHP 8 + MySQL/MariaDB).
+ * Hostel Asset Management — JSON API (PHP 8 + MySQL/MariaDB on Hostinger).
  *
- * Actions (?a=...):
- *   GET  status  → { needsSetup, user }
- *   POST setup   → create the first Admin login (only while no login exists)
- *   POST login   → { email, password }
- *   POST logout
- *   GET  data    → every collection the app uses
- *   POST save    → { coll, id, data, mode: "set" | "update" }
- *   POST delete  → { coll, id }
+ * One organisation, many hostels. Stock is counted by quantity per hostel and item;
+ * every change is a row in ha_txns, so any item's ledger can be rebuilt from opening onwards.
  *
- * Tables are created automatically on first use (see install.php).
+ * Roles: Admin (all hostels, masters, settings) and Warden (own hostel only).
+ * Actions are passed as ?a=...; POSTs carry JSON and the header X-Req: 1.
  */
 declare(strict_types=1);
 
-$configFile = __DIR__ . '/config.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
@@ -26,216 +20,238 @@ function out(array $d, int $http = 200): void
     echo json_encode($d, JSON_UNESCAPED_UNICODE);
     exit;
 }
-function fail(string $code, string $message, int $http = 400): void
+function fail(string $message, int $http = 400, string $code = 'invalid'): void
 {
     out(['error' => ['code' => $code, 'message' => $message]], $http);
 }
 
+$configFile = __DIR__ . '/config.php';
 if (!is_file($configFile)) {
-    fail('unavailable', 'Server is not configured: api/config.php is missing. Check the DB_* secrets in GitHub.', 500);
+    fail('Server is not configured: api/config.php is missing. Check the DB_* secrets in GitHub.', 500, 'unavailable');
 }
 require $configFile;
 require __DIR__ . '/install.php';
+require __DIR__ . '/notify.php';
+date_default_timezone_set(defined('APP_TZ') ? APP_TZ : 'Asia/Kolkata');
 
 session_set_cookie_params([
-    'lifetime' => 60 * 60 * 24 * 30,
-    'path' => '/',
-    'httponly' => true,
-    'samesite' => 'Lax',
+    'lifetime' => 60 * 60 * 24 * 30, 'path' => '/', 'httponly' => true, 'samesite' => 'Lax',
     'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
 ]);
-session_name('hat_sess');
+session_name('ham_sess');
 session_start();
 
 function db(): PDO
 {
     static $pdo = null;
     if ($pdo === null) {
-        $pdo = new PDO(
-            'mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4',
-            DB_USER,
-            DB_PASS,
-            [
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                PDO::ATTR_EMULATE_PREPARES => false,
-            ]
-        );
+        $pdo = new PDO('mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4', DB_USER, DB_PASS, [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES => false,
+        ]);
     }
     return $pdo;
 }
-
-/* ---------- collections: API field name => [column, type] ----------
-   types: s = text, i = int (nullable), n = epoch ms (nullable), b = 0/1
-   write: who may change rows — "admin" (role Admin) or "member" (anyone except Viewer) */
-const COLLS = [
-    'blocks' => ['table' => 'blocks', 'write' => 'admin', 'fields' => [
-        'name' => ['name', 's'], 'code' => ['code', 's'], 'kind' => ['kind', 's'], 'note' => ['note', 's'],
-        'order' => ['sort_order', 'i'], 'sample' => ['sample', 'b']]],
-    'rooms' => ['table' => 'rooms', 'write' => 'admin', 'fields' => [
-        'blockId' => ['block_id', 's'], 'number' => ['number', 's'], 'floor' => ['floor', 's'], 'type' => ['type', 's'],
-        'capacity' => ['capacity', 'i'], 'order' => ['sort_order', 'i'], 'sample' => ['sample', 'b']]],
-    'staff' => ['table' => 'users', 'write' => 'admin', 'fields' => [
-        'name' => ['name', 's'], 'role' => ['role', 's'], 'blockId' => ['block_id', 's'], 'phone' => ['phone', 's'],
-        'email' => ['email', 's'], 'active' => ['active', 's'], 'order' => ['sort_order', 'i'], 'sample' => ['sample', 'b']]],
-    'itemTypes' => ['table' => 'item_types', 'write' => 'admin', 'fields' => [
-        'name' => ['name', 's'], 'category' => ['category', 's'], 'prefix' => ['prefix', 's'],
-        'order' => ['sort_order', 'i'], 'sample' => ['sample', 'b']]],
-    'vendors' => ['table' => 'vendors', 'write' => 'admin', 'fields' => [
-        'name' => ['name', 's'], 'kind' => ['kind', 's'], 'phone' => ['phone', 's'], 'contact' => ['contact', 's'],
-        'notes' => ['notes', 's'], 'order' => ['sort_order', 'i'], 'sample' => ['sample', 'b']]],
-    'categories' => ['table' => 'categories', 'write' => 'admin', 'fields' => [
-        'name' => ['name', 's'], 'order' => ['sort_order', 'i'], 'sample' => ['sample', 'b']]],
-    'reasons' => ['table' => 'reasons', 'write' => 'admin', 'fields' => [
-        'name' => ['name', 's'], 'statusAfter' => ['status_after', 's'], 'dest' => ['dest', 's'],
-        'order' => ['sort_order', 'i'], 'sample' => ['sample', 'b']]],
-    'assets' => ['table' => 'assets', 'write' => 'member', 'fields' => [
-        'tag' => ['tag', 's'], 'name' => ['name', 's'], 'itemTypeId' => ['item_type_id', 's'], 'category' => ['category', 's'],
-        'blockId' => ['block_id', 's'], 'room' => ['room', 's'], 'status' => ['status', 's'], 'condition' => ['cond', 's'],
-        'supplierId' => ['supplier_id', 's'], 'notes' => ['notes', 's'], 'createdAt' => ['created_at', 'n'],
-        'updatedAt' => ['updated_at', 'n'], 'lastMovedAt' => ['last_moved_at', 'n'], 'sample' => ['sample', 'b']]],
-    'movements' => ['table' => 'movements', 'write' => 'member', 'fields' => [
-        'assetId' => ['asset_id', 's'], 'assetTag' => ['asset_tag', 's'], 'assetName' => ['asset_name', 's'],
-        'fromBlockId' => ['from_block_id', 's'], 'fromRoom' => ['from_room', 's'], 'toBlockId' => ['to_block_id', 's'],
-        'toRoom' => ['to_room', 's'], 'reason' => ['reason', 's'], 'statusAfter' => ['status_after', 's'],
-        'handledBy' => ['handled_by', 's'], 'vendor' => ['vendor', 's'], 'notes' => ['notes', 's'],
-        'at' => ['at', 'n'], 'loggedAt' => ['logged_at', 'n'], 'loggedBy' => ['logged_by', 's'], 'sample' => ['sample', 'b']]],
-];
-
-function newId(): string
+function q(string $sql, array $args = []): PDOStatement
 {
-    return base_convert((string) (int) (microtime(true) * 1000), 10, 36) . bin2hex(random_bytes(5));
+    $st = db()->prepare($sql);
+    $st->execute($args);
+    return $st;
 }
-
-function castIn(mixed $v, string $type): mixed
-{
-    if ($type === 'b') {
-        return $v ? 1 : 0;
-    }
-    if ($type === 'i' || $type === 'n') {
-        return ($v === null || $v === '') ? null : (int) $v;
-    }
-    if ($v === null) {
-        return '';
-    }
-    if (is_bool($v)) {
-        $v = $v ? 'Yes' : 'No';
-    }
-    return mb_substr(trim((string) $v), 0, 5000);
-}
-
-function rowOut(string $coll, array $row): array
-{
-    $o = ['id' => $row['id']];
-    foreach (COLLS[$coll]['fields'] as $key => [$col, $type]) {
-        $v = $row[$col] ?? null;
-        if ($type === 'b') {
-            $v = (bool) $v;
-        } elseif ($type === 'i' || $type === 'n') {
-            $v = $v === null ? null : (int) $v;
-        } elseif ($v === null) {
-            $v = '';
-        }
-        $o[$key] = $v;
-    }
-    if ($coll === 'staff') {
-        $o['hasLogin'] = !empty($row['password_hash']);
-    }
-    return $o;
-}
-
 function body(): array
 {
-    $raw = file_get_contents('php://input') ?: '';
-    $j = json_decode($raw, true);
+    $j = json_decode(file_get_contents('php://input') ?: '', true);
     return is_array($j) ? $j : [];
 }
+function str(mixed $v, int $max = 255): string
+{
+    return mb_substr(trim((string) ($v ?? '')), 0, $max);
+}
+function int0(mixed $v): int
+{
+    return (int) ($v ?? 0);
+}
+function idOrNull(mixed $v): ?int
+{
+    $i = (int) ($v ?? 0);
+    return $i > 0 ? $i : null;
+}
+function dateOr(mixed $v, ?string $default): ?string
+{
+    $s = trim((string) ($v ?? ''));
+    if ($s === '') {
+        return $default;
+    }
+    $d = DateTime::createFromFormat('!Y-m-d', $s);
+    if (!$d || $d->format('Y-m-d') !== $s) {
+        fail('Enter a valid date.');
+    }
+    return $s;
+}
+function today(): string
+{
+    return date('Y-m-d');
+}
+function nowMs(): int
+{
+    return (int) round(microtime(true) * 1000);
+}
 
-function currentUser(): ?array
+/* ---------- users & access ---------- */
+function me(): ?array
 {
     if (empty($_SESSION['uid'])) {
         return null;
     }
-    $st = db()->prepare("SELECT id, name, role, email, active FROM users WHERE id = ? AND password_hash IS NOT NULL");
-    $st->execute([$_SESSION['uid']]);
-    $u = $st->fetch();
-    if (!$u || $u['active'] === 'No') {
+    $u = q("SELECT id, name, email, role, hostel_id, active FROM ha_users WHERE id = ? AND password_hash IS NOT NULL", [$_SESSION['uid']])->fetch();
+    if (!$u || !(int) $u['active']) {
         unset($_SESSION['uid']);
         return null;
     }
+    $u['id'] = (int) $u['id'];
+    $u['hostel_id'] = $u['hostel_id'] === null ? null : (int) $u['hostel_id'];
     return $u;
 }
-
 function requireUser(): array
 {
-    $u = currentUser();
+    $u = me();
     if (!$u) {
-        fail('unauthenticated', 'Please sign in again.', 401);
+        fail('Please sign in again.', 401, 'unauthenticated');
+    }
+    if ($u['role'] !== 'Admin' && !$u['hostel_id']) {
+        fail('Your login is not linked to a hostel yet. Ask an Admin to set your hostel.', 403, 'forbidden');
     }
     return $u;
 }
-
+function isAdmin(array $u): bool
+{
+    return $u['role'] === 'Admin';
+}
+function requireAdmin(): array
+{
+    $u = requireUser();
+    if (!isAdmin($u)) {
+        fail('Only an Admin can do this.', 403, 'forbidden');
+    }
+    return $u;
+}
+function canHostel(array $u, ?int $hid): bool
+{
+    return $hid !== null && (isAdmin($u) || $u['hostel_id'] === $hid);
+}
+function publicMe(?array $u): ?array
+{
+    return $u ? ['id' => $u['id'], 'name' => $u['name'], 'email' => $u['email'], 'role' => $u['role'], 'hostelId' => $u['hostel_id']] : null;
+}
 function loginCount(): int
 {
-    return (int) db()->query("SELECT COUNT(*) FROM users WHERE password_hash IS NOT NULL AND active <> 'No'")->fetchColumn();
+    return (int) db()->query("SELECT COUNT(*) FROM ha_users WHERE password_hash IS NOT NULL AND active = 1")->fetchColumn();
 }
 
-function publicUser(?array $u): ?array
+/* ---------- stock ---------- */
+function onHand(int $hid, int $iid): int
 {
-    return $u ? ['id' => $u['id'], 'name' => $u['name'], 'role' => $u['role'], 'email' => $u['email']] : null;
+    return (int) q("SELECT COALESCE(SUM(dir * qty), 0) FROM ha_txns WHERE hostel_id = ? AND item_id = ?", [$hid, $iid])->fetchColumn();
+}
+function pendingOut(int $hid, int $iid, int $exceptIssue = 0): int
+{
+    return (int) q("SELECT COALESCE(SUM(qty), 0) FROM ha_issues WHERE kind = 'transfer' AND status = 'pending' AND hostel_id = ? AND item_id = ? AND id <> ?", [$hid, $iid, $exceptIssue])->fetchColumn();
+}
+function lockHostel(int $hid): void
+{
+    // Serialises stock changes for one hostel so two issues can't both spend the same stock.
+    q("SELECT id FROM ha_hostels WHERE id = ? FOR UPDATE", [$hid]);
+}
+function addTxn(array $t, array $u): void
+{
+    q("INSERT INTO ha_txns (hostel_id, item_id, kind, dir, qty, issue_id, other_hostel_id, party, at, notes, created_by, created_at, sample)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [
+        $t['hostel_id'], $t['item_id'], $t['kind'], $t['dir'], $t['qty'], $t['issue_id'] ?? null, $t['other_hostel_id'] ?? null,
+        $t['party'] ?? '', $t['at'], $t['notes'] ?? '', $u['id'] ?: null, nowMs(), $t['sample'] ?? 0,
+    ]);
+}
+function hostelRow(?int $id): ?array
+{
+    return $id ? (q("SELECT * FROM ha_hostels WHERE id = ?", [$id])->fetch() ?: null) : null;
+}
+function itemRow(?int $id): ?array
+{
+    return $id ? (q("SELECT * FROM ha_items WHERE id = ?", [$id])->fetch() ?: null) : null;
+}
+function issueNo(array $i): string
+{
+    return ['transfer' => 'TR', 'repair' => 'RP', 'damage' => 'DM'][$i['kind']] . '-' . str_pad((string) $i['id'], 5, '0', STR_PAD_LEFT);
+}
+function issueRow(int $id): array
+{
+    $i = q("SELECT * FROM ha_issues WHERE id = ?", [$id])->fetch();
+    if (!$i) {
+        fail('That issue no longer exists.');
+    }
+    return $i;
 }
 
-/* ---------- routing ---------- */
+/* ---------- row shapes for the app ---------- */
+function shapeIssue(array $r): array
+{
+    return [
+        'id' => (int) $r['id'], 'no' => issueNo($r), 'kind' => $r['kind'], 'status' => $r['status'],
+        'hostelId' => (int) $r['hostel_id'], 'toHostelId' => $r['to_hostel_id'] === null ? null : (int) $r['to_hostel_id'],
+        'itemId' => (int) $r['item_id'], 'qty' => (int) $r['qty'], 'place' => $r['place'], 'at' => $r['at'],
+        'expectedAt' => $r['expected_at'], 'notes' => $r['notes'], 'returnedQty' => (int) $r['returned_qty'],
+        'scrappedQty' => (int) $r['scrapped_qty'], 'createdBy' => $r['created_by'] === null ? null : (int) $r['created_by'],
+        'createdAt' => (int) $r['created_at'], 'decidedBy' => $r['decided_by'] === null ? null : (int) $r['decided_by'],
+        'decidedAt' => $r['decided_at'] === null ? null : (int) $r['decided_at'], 'decisionNote' => $r['decision_note'],
+    ];
+}
+
 $action = $_GET['a'] ?? '';
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-
 if ($method === 'POST' && ($_SERVER['HTTP_X_REQ'] ?? '') !== '1') {
-    fail('forbidden', 'Missing request header.', 403);
+    fail('Missing request header.', 403, 'forbidden');
 }
 
 try {
     ensureSchema(db());
 
     switch ($action) {
+        /* ===== sign-in ===== */
         case 'status':
-            out(['needsSetup' => loginCount() === 0, 'user' => publicUser(currentUser())]);
+            out(['needsSetup' => loginCount() === 0, 'user' => publicMe(me())]);
 
         case 'setup': {
             if (loginCount() > 0) {
-                fail('forbidden', 'Setup is already done. Sign in instead.', 403);
+                fail('Setup is already done. Sign in instead.', 403, 'forbidden');
             }
             $b = body();
-            $name = castIn($b['name'] ?? '', 's');
-            $email = strtolower(castIn($b['email'] ?? '', 's'));
+            $name = str($b['name'] ?? '', 120);
+            $email = strtolower(str($b['email'] ?? '', 190));
             $pass = (string) ($b['password'] ?? '');
             if ($name === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($pass) < 8) {
-                fail('invalid_argument', 'Enter a name, a valid email and a password of at least 8 characters.');
+                fail('Enter a name, a valid email and a password of at least 8 characters.');
             }
-            $id = newId();
-            db()->prepare("INSERT INTO users (id, name, role, email, active, password_hash) VALUES (?, ?, 'Admin', ?, 'Yes', ?)")
-                ->execute([$id, $name, $email, password_hash($pass, PASSWORD_DEFAULT)]);
+            q("INSERT INTO ha_users (name, email, role, active, password_hash) VALUES (?, ?, 'Admin', 1, ?)", [$name, $email, password_hash($pass, PASSWORD_DEFAULT)]);
             session_regenerate_id(true);
-            $_SESSION['uid'] = $id;
-            out(['user' => publicUser(currentUser())]);
+            $_SESSION['uid'] = (int) db()->lastInsertId();
+            out(['user' => publicMe(me())]);
         }
 
         case 'login': {
             $b = body();
-            $email = strtolower(trim((string) ($b['email'] ?? '')));
+            $email = strtolower(str($b['email'] ?? '', 190));
             $pass = (string) ($b['password'] ?? '');
-            $st = db()->prepare("SELECT * FROM users WHERE email = ? AND password_hash IS NOT NULL AND active <> 'No'");
-            $st->execute([$email]);
-            $u = $st->fetch();
+            $u = q("SELECT * FROM ha_users WHERE email = ? AND password_hash IS NOT NULL AND active = 1", [$email])->fetch();
             if (!$u || !password_verify($pass, $u['password_hash'])) {
                 usleep(800000);
-                fail('invalid_login', 'Email or password is wrong.', 401);
+                fail('Email or password is wrong.', 401, 'invalid_login');
             }
             if (password_needs_rehash($u['password_hash'], PASSWORD_DEFAULT)) {
-                db()->prepare("UPDATE users SET password_hash = ? WHERE id = ?")->execute([password_hash($pass, PASSWORD_DEFAULT), $u['id']]);
+                q("UPDATE ha_users SET password_hash = ? WHERE id = ?", [password_hash($pass, PASSWORD_DEFAULT), $u['id']]);
             }
             session_regenerate_id(true);
-            $_SESSION['uid'] = $u['id'];
-            out(['user' => publicUser($u)]);
+            $_SESSION['uid'] = (int) $u['id'];
+            out(['user' => publicMe(me())]);
         }
 
         case 'logout':
@@ -243,148 +259,510 @@ try {
             session_destroy();
             out(['ok' => true]);
 
+        /* ===== everything the app shows, scoped to the user ===== */
         case 'data': {
-            requireUser();
-            $res = [];
-            foreach (COLLS as $coll => $def) {
-                $sql = "SELECT * FROM `{$def['table']}`";
-                if ($coll === 'movements') {
-                    $sql .= " ORDER BY at DESC LIMIT 2000";
+            $u = requireUser();
+            $admin = isAdmin($u);
+            $h = $u['hostel_id'];
+            $res = ['me' => publicMe($u)];
+            $res['hostels'] = array_map(fn($r) => ['id' => (int) $r['id'], 'name' => $r['name'], 'code' => $r['code'], 'address' => $r['address'], 'phone' => $r['phone'], 'active' => (bool) $r['active']],
+                db()->query("SELECT * FROM ha_hostels ORDER BY name")->fetchAll());
+            $res['categories'] = array_map(fn($r) => ['id' => (int) $r['id'], 'name' => $r['name']], db()->query("SELECT * FROM ha_categories ORDER BY name")->fetchAll());
+            $res['damagePlaces'] = array_map(fn($r) => ['id' => (int) $r['id'], 'name' => $r['name']], db()->query("SELECT * FROM ha_damage_places ORDER BY name")->fetchAll());
+            $res['items'] = array_map(fn($r) => ['id' => (int) $r['id'], 'name' => $r['name'], 'categoryId' => $r['category_id'] === null ? null : (int) $r['category_id'], 'unit' => $r['unit'], 'notes' => $r['notes'], 'active' => (bool) $r['active']],
+                db()->query("SELECT * FROM ha_items ORDER BY name")->fetchAll());
+            $res['users'] = array_map(function ($r) use ($admin) {
+                $o = ['id' => (int) $r['id'], 'name' => $r['name'], 'role' => $r['role'], 'hostelId' => $r['hostel_id'] === null ? null : (int) $r['hostel_id']];
+                if ($admin) {
+                    $o += ['email' => $r['email'], 'phone' => $r['phone'], 'active' => (bool) $r['active'], 'hasLogin' => $r['password_hash'] !== null];
                 }
-                $res[$coll] = array_map(fn($r) => rowOut($coll, $r), db()->query($sql)->fetchAll());
+                return $o;
+            }, db()->query("SELECT * FROM ha_users ORDER BY name")->fetchAll());
+
+            $res['txns'] = array_map(fn($r) => [
+                'id' => (int) $r['id'], 'hostelId' => (int) $r['hostel_id'], 'itemId' => (int) $r['item_id'], 'kind' => $r['kind'],
+                'dir' => (int) $r['dir'], 'qty' => (int) $r['qty'], 'issueId' => $r['issue_id'] === null ? null : (int) $r['issue_id'],
+                'otherHostelId' => $r['other_hostel_id'] === null ? null : (int) $r['other_hostel_id'], 'party' => $r['party'],
+                'at' => $r['at'], 'notes' => $r['notes'], 'createdBy' => $r['created_by'] === null ? null : (int) $r['created_by'], 'createdAt' => (int) $r['created_at'],
+            ], ($admin ? db()->query("SELECT * FROM ha_txns ORDER BY at, id") : q("SELECT * FROM ha_txns WHERE hostel_id = ? ORDER BY at, id", [$h]))->fetchAll());
+
+            $res['issues'] = array_map('shapeIssue', ($admin
+                ? db()->query("SELECT * FROM ha_issues ORDER BY id DESC")
+                : q("SELECT * FROM ha_issues WHERE hostel_id = ? OR to_hostel_id = ? ORDER BY id DESC", [$h, $h]))->fetchAll());
+
+            $res['warranties'] = array_map(fn($r) => [
+                'id' => (int) $r['id'], 'hostelId' => $r['hostel_id'] === null ? null : (int) $r['hostel_id'],
+                'categoryId' => $r['category_id'] === null ? null : (int) $r['category_id'], 'itemId' => $r['item_id'] === null ? null : (int) $r['item_id'],
+                'title' => $r['title'], 'warrantyNo' => $r['warranty_no'], 'supplier' => $r['supplier'], 'qty' => $r['qty'] === null ? null : (int) $r['qty'],
+                'startAt' => $r['start_at'], 'expiryAt' => $r['expiry_at'], 'notes' => $r['notes'],
+            ], ($admin ? db()->query("SELECT * FROM ha_warranties ORDER BY expiry_at") : q("SELECT * FROM ha_warranties WHERE hostel_id = ? ORDER BY expiry_at", [$h]))->fetchAll());
+
+            if ($admin) {
+                $s = settings();
+                $res['settings'] = [
+                    'emailOn' => ($s['email_on'] ?? '0') === '1', 'emailFrom' => $s['email_from'] ?? '', 'emailTo' => $s['email_to'] ?? '',
+                    'telegramOn' => ($s['telegram_on'] ?? '0') === '1', 'telegramChat' => $s['telegram_chat'] ?? '',
+                    'telegramTokenSet' => ($s['telegram_token'] ?? '') !== '', 'appUrl' => $s['app_url'] ?? '',
+                ];
             }
+            $res['today'] = today();
             out($res);
         }
 
-        case 'save': {
-            $u = requireUser();
+        /* ===== masters (Admin only) ===== */
+        case 'master.save': {
+            requireAdmin();
             $b = body();
             $coll = (string) ($b['coll'] ?? '');
-            $id = (string) ($b['id'] ?? '');
-            $data = is_array($b['data'] ?? null) ? $b['data'] : [];
-            $mode = ($b['mode'] ?? 'set') === 'update' ? 'update' : 'set';
-            if (!isset(COLLS[$coll]) || !preg_match('/^[A-Za-z0-9_\-]{1,40}$/', $id)) {
-                fail('invalid_argument', 'Unknown record.');
-            }
-            $def = COLLS[$coll];
-            if ($u['role'] === 'Viewer' || ($def['write'] === 'admin' && $u['role'] !== 'Admin')) {
-                fail('forbidden', $def['write'] === 'admin' ? 'Only an Admin can change masters, blocks and users.' : 'Viewers cannot make changes.', 403);
-            }
-            $cols = [];
-            $vals = [];
-            foreach ($data as $key => $v) {
-                if (!isset($def['fields'][$key]) || ($coll === 'movements' && $key === 'loggedBy')) {
-                    continue;
-                }
-                [$col, $type] = $def['fields'][$key];
-                $v = castIn($v, $type);
-                if ($coll === 'staff' && $col === 'email') {
-                    $v = $v === '' ? null : strtolower($v);
-                }
-                $cols[] = $col;
-                $vals[] = $v;
-            }
-            // Login password for Users: write-only, hashed. Blank keeps the current one.
-            if ($coll === 'staff' && isset($data['password']) && (string) $data['password'] !== '') {
-                if (strlen((string) $data['password']) < 8) {
-                    fail('invalid_argument', 'Login password must be at least 8 characters.');
-                }
-                $cols[] = 'password_hash';
-                $vals[] = password_hash((string) $data['password'], PASSWORD_DEFAULT);
-            }
-            if ($coll === 'movements' && $mode === 'set') {
-                $cols[] = 'logged_by';
-                $vals[] = $u['id'];
-            }
-            $t = $def['table'];
-            if ($mode === 'update') {
-                if (!$cols) {
-                    out(['ok' => true]);
-                }
-                $set = implode(', ', array_map(fn($c) => "`$c` = ?", $cols));
-                $st = db()->prepare("UPDATE `$t` SET $set WHERE id = ?");
-                $st->execute([...$vals, $id]);
-                if ($st->rowCount() === 0) {
-                    $chk = db()->prepare("SELECT 1 FROM `$t` WHERE id = ?");
-                    $chk->execute([$id]);
-                    if (!$chk->fetchColumn()) {
-                        fail('invalid_argument', 'That record no longer exists.');
+            $id = idOrNull($b['id'] ?? null);
+            $d = is_array($b['data'] ?? null) ? $b['data'] : [];
+            switch ($coll) {
+                case 'hostels':
+                    $name = str($d['name'] ?? '', 120);
+                    if ($name === '') {
+                        fail('Enter the hostel name.');
                     }
-                }
-            } else {
-                $chk = db()->prepare("SELECT 1 FROM `$t` WHERE id = ?");
-                $chk->execute([$id]);
-                if ($chk->fetchColumn()) {
-                    if ($cols) {
-                        $set = implode(', ', array_map(fn($c) => "`$c` = ?", $cols));
-                        db()->prepare("UPDATE `$t` SET $set WHERE id = ?")->execute([...$vals, $id]);
+                    $vals = [$name, strtoupper(str($d['code'] ?? '', 10)), str($d['address'] ?? ''), str($d['phone'] ?? '', 40), empty($d['active']) ? 0 : 1];
+                    $id ? q("UPDATE ha_hostels SET name=?, code=?, address=?, phone=?, active=? WHERE id=?", [...$vals, $id])
+                        : q("INSERT INTO ha_hostels (name, code, address, phone, active) VALUES (?, ?, ?, ?, ?)", $vals);
+                    break;
+                case 'items':
+                    $name = str($d['name'] ?? '', 120);
+                    if ($name === '') {
+                        fail('Enter the item name.');
                     }
-                } else {
-                    // Plain INSERT: a clash on a unique tag/email raises 23000 instead of touching another row.
-                    $colSql = implode(', ', array_map(fn($c) => "`$c`", ['id', ...$cols]));
-                    $ph = implode(', ', array_fill(0, count($cols) + 1, '?'));
-                    db()->prepare("INSERT INTO `$t` ($colSql) VALUES ($ph)")->execute([$id, ...$vals]);
-                }
+                    $vals = [$name, idOrNull($d['categoryId'] ?? null), str($d['unit'] ?? '', 20) ?: 'Nos', str($d['notes'] ?? ''), empty($d['active']) ? 0 : 1];
+                    $id ? q("UPDATE ha_items SET name=?, category_id=?, unit=?, notes=?, active=? WHERE id=?", [...$vals, $id])
+                        : q("INSERT INTO ha_items (name, category_id, unit, notes, active) VALUES (?, ?, ?, ?, ?)", $vals);
+                    break;
+                case 'categories':
+                case 'damagePlaces':
+                    $t = $coll === 'categories' ? 'ha_categories' : 'ha_damage_places';
+                    $name = str($d['name'] ?? '', 80);
+                    if ($name === '') {
+                        fail('Enter a name.');
+                    }
+                    $id ? q("UPDATE $t SET name=? WHERE id=?", [$name, $id]) : q("INSERT INTO $t (name) VALUES (?)", [$name]);
+                    break;
+                case 'users':
+                    $name = str($d['name'] ?? '', 120);
+                    $email = strtolower(str($d['email'] ?? '', 190));
+                    $role = ($d['role'] ?? '') === 'Admin' ? 'Admin' : 'Warden';
+                    $hid = $role === 'Warden' ? idOrNull($d['hostelId'] ?? null) : null;
+                    $active = empty($d['active']) ? 0 : 1;
+                    $pass = (string) ($d['password'] ?? '');
+                    if ($name === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                        fail('Enter a name and a valid email.');
+                    }
+                    if ($role === 'Warden' && !$hid) {
+                        fail('Choose the hostel this warden looks after.');
+                    }
+                    if ($pass !== '' && strlen($pass) < 8) {
+                        fail('Password must be at least 8 characters.');
+                    }
+                    if (!$id && $pass === '') {
+                        fail('Set a password so this person can sign in.');
+                    }
+                    if ($id && $id === me()['id'] && ($role !== 'Admin' || !$active)) {
+                        fail('You cannot remove your own Admin access.');
+                    }
+                    $vals = [$name, $email, $role, $hid, str($d['phone'] ?? '', 40), $active];
+                    if ($id) {
+                        q("UPDATE ha_users SET name=?, email=?, role=?, hostel_id=?, phone=?, active=? WHERE id=?", [...$vals, $id]);
+                    } else {
+                        q("INSERT INTO ha_users (name, email, role, hostel_id, phone, active) VALUES (?, ?, ?, ?, ?, ?)", $vals);
+                        $id = (int) db()->lastInsertId();
+                    }
+                    if ($pass !== '') {
+                        q("UPDATE ha_users SET password_hash=? WHERE id=?", [password_hash($pass, PASSWORD_DEFAULT), $id]);
+                    }
+                    break;
+                default:
+                    fail('Unknown master.');
             }
-            $st = db()->prepare("SELECT * FROM `$t` WHERE id = ?");
-            $st->execute([$id]);
-            out(['row' => rowOut($coll, $st->fetch() ?: ['id' => $id])]);
-        }
-
-        case 'delete': {
-            $u = requireUser();
-            $b = body();
-            $coll = (string) ($b['coll'] ?? '');
-            $id = (string) ($b['id'] ?? '');
-            if (!isset(COLLS[$coll])) {
-                fail('invalid_argument', 'Unknown record.');
-            }
-            $def = COLLS[$coll];
-            if ($u['role'] === 'Viewer' || ($def['write'] === 'admin' && $u['role'] !== 'Admin')) {
-                fail('forbidden', 'You do not have permission to delete this.', 403);
-            }
-            if ($coll === 'staff' && $id === $u['id']) {
-                fail('invalid_argument', 'You cannot delete your own login.');
-            }
-            db()->prepare("DELETE FROM `{$def['table']}` WHERE id = ?")->execute([$id]);
             out(['ok' => true]);
         }
 
+        case 'master.delete': {
+            $u = requireAdmin();
+            $b = body();
+            $coll = (string) ($b['coll'] ?? '');
+            $id = idOrNull($b['id'] ?? null) ?? 0;
+            $used = function (string $sql) use ($id): bool {
+                return (bool) q($sql, [$id])->fetchColumn();
+            };
+            switch ($coll) {
+                case 'hostels':
+                    if ($used("SELECT 1 FROM ha_txns WHERE ? IN (hostel_id, other_hostel_id) LIMIT 1") || $used("SELECT 1 FROM ha_issues WHERE ? IN (hostel_id, to_hostel_id) LIMIT 1")) {
+                        fail('This hostel has stock history, so it can\'t be deleted. Mark it inactive instead.');
+                    }
+                    if ($used("SELECT 1 FROM ha_users WHERE hostel_id=? LIMIT 1")) {
+                        fail('Some wardens are linked to this hostel. Move them to another hostel first.');
+                    }
+                    q("DELETE FROM ha_hostels WHERE id=?", [$id]);
+                    break;
+                case 'items':
+                    if ($used("SELECT 1 FROM ha_txns WHERE item_id=? LIMIT 1") || $used("SELECT 1 FROM ha_issues WHERE item_id=? LIMIT 1")) {
+                        fail('This item has stock history, so it can\'t be deleted. Mark it inactive instead.');
+                    }
+                    q("DELETE FROM ha_items WHERE id=?", [$id]);
+                    break;
+                case 'categories':
+                    if ($used("SELECT 1 FROM ha_items WHERE category_id=? LIMIT 1")) {
+                        fail('Some items use this category. Change them first.');
+                    }
+                    q("DELETE FROM ha_categories WHERE id=?", [$id]);
+                    break;
+                case 'damagePlaces':
+                    q("DELETE FROM ha_damage_places WHERE id=?", [$id]);
+                    break;
+                case 'users':
+                    if ($id === $u['id']) {
+                        fail('You cannot delete your own login.');
+                    }
+                    q("DELETE FROM ha_users WHERE id=?", [$id]);
+                    break;
+                default:
+                    fail('Unknown master.');
+            }
+            out(['ok' => true]);
+        }
+
+        /* ===== stock in: opening stock and items received ===== */
+        case 'stock.add': {
+            $u = requireUser();
+            $b = body();
+            $hid = idOrNull($b['hostelId'] ?? null);
+            $iid = idOrNull($b['itemId'] ?? null);
+            $kind = ($b['kind'] ?? '') === 'opening' ? 'opening' : 'in';
+            $qty = int0($b['qty'] ?? 0);
+            if (!canHostel($u, $hid) || !hostelRow($hid)) {
+                fail('Choose your hostel.');
+            }
+            if (!itemRow($iid)) {
+                fail('Choose an item.');
+            }
+            if ($qty <= 0 || $qty > 1000000) {
+                fail('Enter a quantity greater than 0.');
+            }
+            if ($kind === 'opening' && (int) q("SELECT COUNT(*) FROM ha_txns WHERE hostel_id=? AND item_id=? AND kind='opening'", [$hid, $iid])->fetchColumn() > 0) {
+                fail('Opening stock for this item is already entered for this hostel. Add new stock as "Received" instead.');
+            }
+            addTxn(['hostel_id' => $hid, 'item_id' => $iid, 'kind' => $kind, 'dir' => 1, 'qty' => $qty,
+                'party' => str($b['party'] ?? '', 160), 'at' => dateOr($b['at'] ?? '', today()), 'notes' => str($b['notes'] ?? '', 500)], $u);
+            out(['ok' => true]);
+        }
+
+        case 'txn.delete': {
+            // Admin correction for a wrong opening / received entry. Issue-linked entries are undone by voiding the issue.
+            $u = requireAdmin();
+            $id = idOrNull(body()['id'] ?? null) ?? 0;
+            $t = q("SELECT * FROM ha_txns WHERE id=?", [$id])->fetch();
+            if (!$t) {
+                fail('That entry no longer exists.');
+            }
+            if (!in_array($t['kind'], ['opening', 'in'], true)) {
+                fail('This entry belongs to an issue. Void the issue instead.');
+            }
+            db()->beginTransaction();
+            lockHostel((int) $t['hostel_id']);
+            $after = onHand((int) $t['hostel_id'], (int) $t['item_id']) - (int) $t['qty'];
+            if ($after < 0) {
+                db()->rollBack();
+                fail('Deleting this would make stock negative, because some of it has already been issued.');
+            }
+            q("DELETE FROM ha_txns WHERE id=?", [$id]);
+            db()->commit();
+            out(['ok' => true]);
+        }
+
+        /* ===== issue: transfer to another hostel, send for repair, or mark damaged ===== */
+        case 'issue.create': {
+            $u = requireUser();
+            $b = body();
+            $kind = (string) ($b['kind'] ?? '');
+            $hid = idOrNull($b['hostelId'] ?? null);
+            $iid = idOrNull($b['itemId'] ?? null);
+            $qty = int0($b['qty'] ?? 0);
+            $to = idOrNull($b['toHostelId'] ?? null);
+            $at = dateOr($b['at'] ?? '', today());
+            $place = str($b['place'] ?? '', 160);
+            $notes = str($b['notes'] ?? '', 500);
+            if (!in_array($kind, ['transfer', 'repair', 'damage'], true)) {
+                fail('Choose the issue type.');
+            }
+            if (!canHostel($u, $hid) || !hostelRow($hid)) {
+                fail('Choose the hostel the items are leaving.');
+            }
+            $item = itemRow($iid);
+            if (!$item) {
+                fail('Choose an item.');
+            }
+            if ($qty <= 0) {
+                fail('Enter a quantity greater than 0.');
+            }
+            if ($kind === 'transfer') {
+                $toRow = hostelRow($to);
+                if (!$toRow || !(int) $toRow['active']) {
+                    fail('Choose the hostel receiving the items.');
+                }
+                if ($to === $hid) {
+                    fail('The receiving hostel must be different.');
+                }
+            }
+            db()->beginTransaction();
+            lockHostel($hid);
+            $avail = onHand($hid, $iid) - pendingOut($hid, $iid);
+            if ($qty > $avail) {
+                db()->rollBack();
+                fail("Only $avail {$item['unit']} of {$item['name']} available to issue at this hostel.");
+            }
+            $status = ['transfer' => 'pending', 'repair' => 'at_repair', 'damage' => 'done'][$kind];
+            q("INSERT INTO ha_issues (kind, status, hostel_id, to_hostel_id, item_id, qty, place, at, expected_at, notes, created_by, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [
+                $kind, $status, $hid, $kind === 'transfer' ? $to : null, $iid, $qty, $kind === 'transfer' ? '' : $place, $at,
+                $kind === 'repair' ? dateOr($b['expectedAt'] ?? '', null) : null, $notes, $u['id'], nowMs(),
+            ]);
+            $issueId = (int) db()->lastInsertId();
+            if ($kind === 'repair') {
+                addTxn(['hostel_id' => $hid, 'item_id' => $iid, 'kind' => 'repair_out', 'dir' => -1, 'qty' => $qty, 'issue_id' => $issueId, 'party' => $place, 'at' => $at, 'notes' => $notes], $u);
+            } elseif ($kind === 'damage') {
+                addTxn(['hostel_id' => $hid, 'item_id' => $iid, 'kind' => 'damaged', 'dir' => -1, 'qty' => $qty, 'issue_id' => $issueId, 'party' => $place, 'at' => $at, 'notes' => $notes], $u);
+            }
+            db()->commit();
+            $issue = issueRow($issueId);
+            if ($kind !== 'damage') {
+                notifyIssue($kind === 'transfer' ? 'transfer_sent' : 'repair_sent', $issue, $u);
+            }
+            out(['ok' => true, 'issue' => shapeIssue($issue)]);
+        }
+
+        case 'issue.decide': {
+            // The receiving hostel approves (stock moves) or rejects (nothing moves) a transfer.
+            $u = requireUser();
+            $b = body();
+            $i = issueRow(idOrNull($b['id'] ?? null) ?? 0);
+            $approve = ($b['decision'] ?? '') === 'approve';
+            $note = str($b['note'] ?? '', 500);
+            if ($i['kind'] !== 'transfer' || $i['status'] !== 'pending') {
+                fail('This transfer is no longer waiting for approval.');
+            }
+            if (!canHostel($u, (int) $i['to_hostel_id'])) {
+                fail('Only the receiving hostel can approve or reject this transfer.', 403, 'forbidden');
+            }
+            if (!$approve && $note === '') {
+                fail('Give a reason for rejecting.');
+            }
+            db()->beginTransaction();
+            lockHostel((int) $i['hostel_id']);
+            $i = issueRow((int) $i['id']);
+            if ($i['status'] !== 'pending') {
+                db()->rollBack();
+                fail('This transfer is no longer waiting for approval.');
+            }
+            if ($approve) {
+                $avail = onHand((int) $i['hostel_id'], (int) $i['item_id']) - pendingOut((int) $i['hostel_id'], (int) $i['item_id'], (int) $i['id']);
+                if ((int) $i['qty'] > $avail) {
+                    db()->rollBack();
+                    fail("The sending hostel now has only $avail available, so this can't be approved. Ask them to cancel and resend.");
+                }
+                $day = today();
+                $common = ['item_id' => (int) $i['item_id'], 'qty' => (int) $i['qty'], 'issue_id' => (int) $i['id'], 'at' => $day, 'notes' => $i['notes']];
+                addTxn($common + ['hostel_id' => (int) $i['hostel_id'], 'kind' => 'transfer_out', 'dir' => -1, 'other_hostel_id' => (int) $i['to_hostel_id']], $u);
+                addTxn($common + ['hostel_id' => (int) $i['to_hostel_id'], 'kind' => 'transfer_in', 'dir' => 1, 'other_hostel_id' => (int) $i['hostel_id']], $u);
+            }
+            q("UPDATE ha_issues SET status=?, decided_by=?, decided_at=?, decision_note=? WHERE id=?", [$approve ? 'approved' : 'rejected', $u['id'], nowMs(), $note, $i['id']]);
+            db()->commit();
+            notifyIssue($approve ? 'transfer_approved' : 'transfer_rejected', issueRow((int) $i['id']), $u);
+            out(['ok' => true]);
+        }
+
+        case 'issue.cancel': {
+            // The sending hostel withdraws a transfer that hasn't been approved yet.
+            $u = requireUser();
+            $i = issueRow(idOrNull(body()['id'] ?? null) ?? 0);
+            if ($i['kind'] !== 'transfer' || $i['status'] !== 'pending') {
+                fail('Only a transfer waiting for approval can be cancelled.');
+            }
+            if (!canHostel($u, (int) $i['hostel_id'])) {
+                fail('Only the sending hostel can cancel this transfer.', 403, 'forbidden');
+            }
+            q("UPDATE ha_issues SET status='cancelled', decided_by=?, decided_at=? WHERE id=? AND status='pending'", [$u['id'], nowMs(), $i['id']]);
+            out(['ok' => true]);
+        }
+
+        case 'issue.void': {
+            // Admin undo for an issue entered by mistake: removes its stock entries.
+            $u = requireAdmin();
+            $i = issueRow(idOrNull(body()['id'] ?? null) ?? 0);
+            if (in_array($i['status'], ['void', 'rejected', 'cancelled'], true)) {
+                fail('This issue has no stock effect to undo.');
+            }
+            db()->beginTransaction();
+            lockHostel((int) $i['hostel_id']);
+            if ($i['kind'] === 'transfer' && $i['status'] === 'approved') {
+                $recv = (int) $i['to_hostel_id'];
+                lockHostel($recv);
+                if (onHand($recv, (int) $i['item_id']) - pendingOut($recv, (int) $i['item_id']) < (int) $i['qty']) {
+                    db()->rollBack();
+                    fail('The receiving hostel has already issued some of these items, so this transfer can\'t be voided.');
+                }
+            }
+            q("DELETE FROM ha_txns WHERE issue_id=?", [$i['id']]);
+            q("UPDATE ha_issues SET status='void', decided_by=?, decided_at=? WHERE id=?", [$u['id'], nowMs(), $i['id']]);
+            db()->commit();
+            out(['ok' => true]);
+        }
+
+        case 'repair.return': {
+            // Items back from repair: okQty go back into stock; scrapQty were not repairable and count as damaged.
+            $u = requireUser();
+            $b = body();
+            $i = issueRow(idOrNull($b['id'] ?? null) ?? 0);
+            $ok = int0($b['okQty'] ?? 0);
+            $scrap = int0($b['scrapQty'] ?? 0);
+            $at = dateOr($b['at'] ?? '', today());
+            $notes = str($b['notes'] ?? '', 500);
+            if ($i['kind'] !== 'repair' || !in_array($i['status'], ['at_repair', 'partly_returned'], true)) {
+                fail('This repair is already closed.');
+            }
+            if (!canHostel($u, (int) $i['hostel_id'])) {
+                fail('Only the hostel that sent these items can record their return.', 403, 'forbidden');
+            }
+            $outstanding = (int) $i['qty'] - (int) $i['returned_qty'] - (int) $i['scrapped_qty'];
+            if ($ok < 0 || $scrap < 0 || $ok + $scrap === 0) {
+                fail('Enter how many came back repaired, or how many could not be repaired.');
+            }
+            if ($ok + $scrap > $outstanding) {
+                fail("Only $outstanding are still at repair.");
+            }
+            db()->beginTransaction();
+            lockHostel((int) $i['hostel_id']);
+            $base = ['hostel_id' => (int) $i['hostel_id'], 'item_id' => (int) $i['item_id'], 'issue_id' => (int) $i['id'], 'at' => $at];
+            if ($ok > 0) {
+                addTxn($base + ['kind' => 'repair_return', 'dir' => 1, 'qty' => $ok, 'party' => $i['place'], 'notes' => $notes], $u);
+            }
+            if ($scrap > 0) {
+                // Comes back on the books from repair, then goes out as damaged, so every column still adds up.
+                addTxn($base + ['kind' => 'repair_return', 'dir' => 1, 'qty' => $scrap, 'party' => $i['place'], 'notes' => 'Not repairable' . ($notes ? " — $notes" : '')], $u);
+                addTxn($base + ['kind' => 'damaged', 'dir' => -1, 'qty' => $scrap, 'party' => str($b['place'] ?? '', 160), 'notes' => 'Not repairable after repair ' . issueNo($i) . ($notes ? " — $notes" : '')], $u);
+            }
+            $left = $outstanding - $ok - $scrap;
+            q("UPDATE ha_issues SET returned_qty = returned_qty + ?, scrapped_qty = scrapped_qty + ?, status = ? WHERE id = ?", [$ok, $scrap, $left === 0 ? 'closed' : 'partly_returned', $i['id']]);
+            db()->commit();
+            notifyIssue('repair_returned', issueRow((int) $i['id']), $u, ['ok' => $ok, 'scrap' => $scrap]);
+            out(['ok' => true]);
+        }
+
+        /* ===== warranties ===== */
+        case 'warranty.save': {
+            $u = requireUser();
+            $b = body();
+            $id = idOrNull($b['id'] ?? null);
+            $hid = idOrNull($b['hostelId'] ?? null);
+            if (!isAdmin($u)) {
+                $hid = $u['hostel_id'];
+            }
+            if ($id) {
+                $w = q("SELECT * FROM ha_warranties WHERE id=?", [$id])->fetch();
+                if (!$w || (!isAdmin($u) && (int) $w['hostel_id'] !== $u['hostel_id'])) {
+                    fail('That warranty no longer exists.');
+                }
+            }
+            $expiry = dateOr($b['expiryAt'] ?? '', null);
+            if (!$expiry) {
+                fail('Enter the warranty expiry date.');
+            }
+            $title = str($b['title'] ?? '', 160);
+            $iid = idOrNull($b['itemId'] ?? null);
+            if ($title === '' && !$iid) {
+                fail('Choose an item or describe what the warranty covers.');
+            }
+            $qty = ($b['qty'] ?? '') === '' || $b['qty'] === null ? null : max(0, int0($b['qty']));
+            $vals = [$hid, idOrNull($b['categoryId'] ?? null), $iid, $title, str($b['warrantyNo'] ?? '', 80), str($b['supplier'] ?? '', 160), $qty,
+                dateOr($b['startAt'] ?? '', null), $expiry, str($b['notes'] ?? '', 500)];
+            $id ? q("UPDATE ha_warranties SET hostel_id=?, category_id=?, item_id=?, title=?, warranty_no=?, supplier=?, qty=?, start_at=?, expiry_at=?, notes=? WHERE id=?", [...$vals, $id])
+                : q("INSERT INTO ha_warranties (hostel_id, category_id, item_id, title, warranty_no, supplier, qty, start_at, expiry_at, notes, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [...$vals, $u['id'], nowMs()]);
+            out(['ok' => true]);
+        }
+
+        case 'warranty.delete': {
+            $u = requireUser();
+            $id = idOrNull(body()['id'] ?? null) ?? 0;
+            $w = q("SELECT * FROM ha_warranties WHERE id=?", [$id])->fetch();
+            if ($w && (isAdmin($u) || (int) $w['hostel_id'] === $u['hostel_id'])) {
+                q("DELETE FROM ha_warranties WHERE id=?", [$id]);
+            }
+            out(['ok' => true]);
+        }
+
+        /* ===== notification settings (Admin) ===== */
+        case 'settings.save': {
+            requireAdmin();
+            $b = body();
+            $emailTo = implode(', ', array_filter(array_map('trim', preg_split('/[,;\s]+/', (string) ($b['emailTo'] ?? ''))), fn($e) => filter_var($e, FILTER_VALIDATE_EMAIL)));
+            $from = str($b['emailFrom'] ?? '', 190);
+            if ($from !== '' && !filter_var($from, FILTER_VALIDATE_EMAIL)) {
+                fail('Enter a valid "From" email address, or leave it blank.');
+            }
+            $set = [
+                'email_on' => empty($b['emailOn']) ? '0' : '1', 'email_from' => $from, 'email_to' => $emailTo,
+                'telegram_on' => empty($b['telegramOn']) ? '0' : '1', 'telegram_chat' => str($b['telegramChat'] ?? '', 60),
+                'app_url' => str($b['appUrl'] ?? '', 200),
+            ];
+            if (isset($b['telegramToken']) && trim((string) $b['telegramToken']) !== '') {
+                $set['telegram_token'] = str($b['telegramToken'], 120);
+            }
+            if (!empty($b['clearToken'])) {
+                $set['telegram_token'] = '';
+            }
+            $st = db()->prepare("REPLACE INTO ha_settings (k, v) VALUES (?, ?)");
+            foreach ($set as $k => $v) {
+                $st->execute([$k, $v]);
+            }
+            out(['ok' => true]);
+        }
+
+        case 'settings.test': {
+            $u = requireAdmin();
+            out(['result' => sendTest($u)]);
+        }
+
+        /* ===== sample data, used by the deploy workflow or an Admin ===== */
         case 'seed': {
-            // Allowed for a signed-in Admin, or for the deploy workflow using a key derived from DB_PASS.
             $key = (string) ($_GET['key'] ?? '');
-            $u = currentUser();
-            $okKey = $key !== '' && hash_equals(hash_hmac('sha256', 'asset-tracker-seed', DB_PASS), $key);
+            $okKey = $key !== '' && hash_equals(hash_hmac('sha256', 'hostel-assets-seed', DB_PASS), $key);
+            $u = me();
             if (!$okKey && (!$u || $u['role'] !== 'Admin')) {
-                fail('forbidden', 'Only an Admin can load sample data.', 403);
+                fail('Only an Admin can load sample data.', 403, 'forbidden');
             }
             require __DIR__ . '/seed.php';
             out(['added' => seedSample(db())]);
         }
 
         case 'clear': {
-            // Deletes all blocks, rooms, assets and movements. Masters (users, item types, vendors,
-            // categories, reasons) are kept. Only the deploy workflow can call this, with a key derived from DB_PASS.
+            // Deletes all stock, issues and warranties (masters and users are kept). Deploy workflow only.
             $key = (string) ($_GET['key'] ?? '');
-            if ($key === '' || !hash_equals(hash_hmac('sha256', 'asset-tracker-clear', DB_PASS), $key)) {
-                fail('forbidden', 'Not allowed.', 403);
+            if ($key === '' || !hash_equals(hash_hmac('sha256', 'hostel-assets-clear', DB_PASS), $key)) {
+                fail('Not allowed.', 403, 'forbidden');
             }
             $done = [];
-            foreach (['movements', 'assets', 'rooms', 'blocks'] as $t) {
-                $done[$t] = db()->exec("DELETE FROM `$t`");
+            foreach (['ha_txns', 'ha_issues', 'ha_warranties'] as $t) {
+                $done[$t] = db()->exec("DELETE FROM $t");
             }
-            // Users assigned to a deleted block become "All blocks".
-            db()->exec("UPDATE users SET block_id = ''");
             out(['deleted' => $done]);
         }
 
         default:
-            fail('invalid_argument', 'Unknown action.', 404);
+            fail('Unknown action.', 404);
     }
 } catch (PDOException $e) {
-    if ($e->getCode() === '23000') {
-        fail('invalid_argument', 'That tag or email is already used by another record.');
+    if (db()->inTransaction()) {
+        db()->rollBack();
     }
-    error_log('[asset-tracker] ' . $e->getMessage());
-    fail('unavailable', 'Database error. Check the DB_* settings and try again.', 500);
+    if ($e->getCode() === '23000') {
+        fail('That name or email is already used by another record.');
+    }
+    error_log('[hostel-assets] ' . $e->getMessage());
+    fail('Database error. Check the DB_* settings and try again.', 500, 'unavailable');
 }

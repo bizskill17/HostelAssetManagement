@@ -6,11 +6,11 @@ on:
   workflow_dispatch:
     inputs:
       load_sample_data:
-        description: "Load sample data (Block A–D) after deploying"
+        description: "Load sample data (4 hostels) after deploying"
         type: boolean
         default: false
       clear_data:
-        description: "DELETE all blocks, rooms, assets and movements (masters are kept)"
+        description: "DELETE all stock entries, issues and warranties (hostels, items and users are kept)"
         type: boolean
         default: false
 
@@ -53,7 +53,7 @@ jobs:
 
       - name: Stamp script links with this version (cache busting)
         if: env.FTP_SERVER != ''
-        run: sed -i "s#src=\"hosted.js\"#src=\"hosted.js?v=${GITHUB_SHA::8}\"#" public/index.html && grep -o 'hosted.js?v=[a-f0-9]*' public/index.html
+        run: sed -i "s#src=\"app.js\"#src=\"app.js?v=${GITHUB_SHA::8}\"#" public/index.html && grep -o 'app.js?v=[a-f0-9]*' public/index.html
 
       - name: Install lftp
         if: env.FTP_SERVER != ''
@@ -105,7 +105,7 @@ jobs:
 
           # If the web root is the login folder, an earlier deploy put a copy in a nested public_html/. Remove that copy.
           if [ "$DIR" = "./" ]; then
-            if ftpcmd "cls -1 public_html/hosted.js >/dev/null;" 2>/dev/null; then
+            if ftpcmd "cls -1 public_html/app.js >/dev/null;" 2>/dev/null; then
               ftpcmd "rm -r -f public_html;" && echo "Removed the misplaced nested public_html/ copy"
             fi
           fi
@@ -118,16 +118,16 @@ jobs:
           DB_PASS: ${{ secrets.DB_PASS }}
           SITE_URL: ${{ vars.SITE_URL || 'https://assettracker.bizskilledu.com' }}
         run: |
-          KEY=$(python3 -c "import hmac,hashlib,os;print(hmac.new(os.environ['DB_PASS'].encode(),b'asset-tracker-seed',hashlib.sha256).hexdigest())")
+          KEY=$(python3 -c "import hmac,hashlib,os;print(hmac.new(os.environ['DB_PASS'].encode(),b'hostel-assets-seed',hashlib.sha256).hexdigest())")
           curl -fsS --max-time 60 "$SITE_URL/api/index.php?a=seed&key=$KEY"; echo
 
-      # Permanently deletes blocks, rooms, assets and movements. Runs only when started manually with
+      # Permanently deletes all stock entries, issues and warranties. Runs only when started manually with
       # "DELETE all…" ticked, or for a pushed commit whose message contains [clear-data].
-      - name: Clear data (blocks, rooms, assets, movements)
+      - name: Clear data (stock entries, issues, warranties)
         if: env.FTP_SERVER != '' && (inputs.clear_data || contains(github.event.head_commit.message, '[clear-data]'))
         env:
           DB_PASS: ${{ secrets.DB_PASS }}
           SITE_URL: ${{ vars.SITE_URL || 'https://assettracker.bizskilledu.com' }}
         run: |
-          KEY=$(python3 -c "import hmac,hashlib,os;print(hmac.new(os.environ['DB_PASS'].encode(),b'asset-tracker-clear',hashlib.sha256).hexdigest())")
+          KEY=$(python3 -c "import hmac,hashlib,os;print(hmac.new(os.environ['DB_PASS'].encode(),b'hostel-assets-clear',hashlib.sha256).hexdigest())")
           curl -fsS --max-time 60 "$SITE_URL/api/index.php?a=clear&key=$KEY"; echo

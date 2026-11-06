@@ -1,66 +1,75 @@
-# Hostel Asset Movement Tracker
+# Hostel Asset Management
 
-Tracks every asset across hostel blocks: where it is, its status, and every movement between rooms, blocks, the store and the repair workshop. It includes masters for Rooms, Users, Item types, Vendors, Categories and Movement reasons.
+One organisation, many hostels. Each hostel keeps a **count** of every item (beds, mattresses, fans…), with no tag numbers on individual items. Every change is recorded, so you can open any item's ledger and see its history from opening stock to today.
 
-It runs on Hostinger shared hosting (PHP 8 + MySQL). Every push to `main` deploys automatically through GitHub Actions.
+It runs on Hostinger shared hosting (PHP 8 + MySQL). Every push to `main` deploys automatically through GitHub Actions once the secrets are set.
 
-## What's in the repo
+## What it does
 
-```
-public/                 ← uploaded to your site's public_html
-  index.html            ← the app (desktop left menu, mobile bottom bar)
-  hosted.js             ← sign-in screen + connects the app to the API
-  api/index.php         ← JSON API (login, read, save, delete)
-  api/install.php       ← creates the MySQL tables on first run
-  api/.htaccess         ← blocks direct access to config/install files
-.github/workflows/deploy.yml  ← GitHub Actions: deploy to Hostinger over FTP
-```
-
-## One-time setup
-
-### 1. Create the database (Hostinger hPanel)
-1. Go to **Websites → Manage → Databases → Management**.
-2. Create a database and a database user, and note all three: database name, user and password. On Hostinger they look like `u123456789_assets`.
-3. You don't need to run any SQL. The tables are created automatically the first time the app opens.
-
-### 2. Get the FTP details (hPanel → Files → FTP Accounts)
-Note the **FTP IP (hostname)** and **FTP username**. If you don't know the password, use **Change FTP password**. Files are uploaded into `public_html/`, the "Folder to upload files" shown on that page.
-
-### 3. Add GitHub secrets
-In this repo, go to **Settings → Secrets and variables → Actions → New repository secret** and add:
-
-| Secret | Value |
+| Screen | What you do there |
 |---|---|
-| `FTP_SERVER` | FTP IP, without `ftp://` |
-| `FTP_USERNAME` | FTP username |
-| `FTP_PASSWORD` | FTP password |
-| `DB_HOST` | `localhost` |
-| `DB_NAME` | database name from step 1 |
-| `DB_USER` | database user from step 1 |
-| `DB_PASS` | database password from step 1 |
+| **Dashboard** | Counts, transfers waiting for your approval, items at repair, warranties about to expire |
+| **Inventory** | Hostel, item, unit, category, opening, in, issued, damaged and current count. Click an item to open its ledger |
+| **Item ledger** | Every entry for one item (opening → received → transfers → repairs → damage) with a running balance |
+| **Stock in** | Enter **opening stock** (once per item per hostel) and **items received** |
+| **Issue register** | Every issue: **transfer to another hostel**, **send for repair**, or **damaged** |
+| **Approvals** | Transfers wait here for the receiving hostel. Stock moves only when they approve; they can also reject with a reason |
+| **Repairs** | Items out for repair, what's overdue, and **Record return** (repaired → back in stock; not repairable → counted as damaged) |
+| **Damaged** | Everything written off, with where it was sent (optional) |
+| **Warranties** | Warranty / AMC number, supplier, quantity, expiry. Shows what expires in 30 / 90 days |
+| **Masters** (Admin) | Hostels, Items (with unit and category), Categories, Damage destinations, Users |
+| **Settings** (Admin) | Email and Telegram notifications |
 
-The workflow uploads with `lftp` in passive mode. It tries plain FTP first, then FTP over TLS. It works out the right folder by itself: it uploads a small probe file, checks which folder `https://assettracker.bizskilledu.com` serves, and deploys there. For a different domain, set the repository **variable** `SITE_URL`. To skip the probe, set the variable `FTP_SERVER_DIR` to `./` or `public_html/`.
+Every list has counts on top, search and filters, and **Download CSV** (which downloads exactly what the filters show).
 
-### 4. Deploy
-- Go to **Actions → Deploy to Hostinger → Run workflow**, or push any change to `main`.
-- When the run turns green, open your domain.
-- In hPanel, turn on **SSL** for the domain so sign-in happens over HTTPS.
-
-### 5. First sign-in
-- The first visit shows **Create the admin account**. Enter your name, email and a password; this becomes the Admin.
-- Add your blocks under **Blocks** (give each a short code such as A or B), then rooms under **Masters → Rooms** (use **Bulk add rooms** for whole floors).
-- Add people under **Masters → Users**. Give each an email and a **Login password** so they can sign in.
+### How the counts work
+- **In** = received + transfers in + returned from repair
+- **Issued** = transfers out + sent for repair
+- **Current inventory** = opening + in − issued − damaged
+- A transfer waiting for approval doesn't change stock yet, but it does reserve the quantity so it can't be issued twice.
 
 ## Roles
 
 | Role | Can do |
 |---|---|
-| **Admin** | Everything, including users, blocks and all masters |
-| **Viewer** | Look only, no changes |
-| Any other role (Warden, Maintenance, Store keeper…) | Add and edit assets and log movements; masters are read-only |
+| **Admin** | Sees every hostel. The only role that can change masters (hostels, items, categories, users) and settings. Can void an issue entered by mistake, or delete a wrong stock entry |
+| **Warden** | Linked to one hostel and sees only that hostel's data. Adds stock, issues items, approves transfers coming in, records repair returns, keeps warranties |
 
-## Notes
-- Item types, categories and movement reasons are loaded as defaults on first run, and you can edit them.
-- The database password never goes into the repo. The workflow writes `public/api/config.php` from the secrets during each deploy.
-- **Export CSV** in the Movement log downloads the filtered log for Excel.
-- To run locally, copy `public/api/config.sample.php` to `config.php`, fill it in, then run `php -S localhost:8000 -t public`.
+## Notifications
+Set them up under **Settings**:
+- **Email**: goes to all Admins, the wardens of both hostels involved, and any extra addresses you add. It uses Hostinger's PHP mail, so set the **From** address to a mailbox on your domain.
+- **Telegram**: create a bot with @BotFather, add it to your group, then paste the bot token and the group chat ID (it starts with `-100`).
+
+Notifications are sent when a transfer is sent, approved or rejected, and when items are sent for repair or come back. Use **Send a test** to check both.
+
+## What's in the repo
+
+```
+public/                 ← uploaded to the site's web folder
+  index.html            ← page layout and styles
+  app.js                ← the app (all screens)
+  api/index.php         ← JSON API: sign-in, data, stock, issues, approvals, repairs, warranties, settings
+  api/install.php       ← creates the tables (ha_*) on first run
+  api/notify.php        ← email + Telegram
+  api/seed.php          ← sample data
+.github/workflows/deploy.yml  ← deploys to Hostinger over FTP
+```
+
+The tables all start with `ha_`, so this app can share a database with the older asset tracker without clashing.
+
+## One-time setup
+
+1. **Database**: in hPanel go to **Websites → Manage → Databases** and create a database and user. The tables are created automatically on first visit.
+2. **FTP**: under **hPanel → Files → FTP Accounts**, note the FTP IP and username (reset the password if you need to).
+3. **GitHub secrets**: under **Settings → Secrets and variables → Actions**, add `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD`, `DB_HOST` (`localhost`), `DB_NAME`, `DB_USER`, `DB_PASS`. Set the repository **variable** `SITE_URL` to your domain (default: `https://assettracker.bizskilledu.com`).
+4. **Deploy**: run **Actions → Deploy to Hostinger**, or push to `main`.
+5. **First sign-in**: the first visit asks you to create the Admin account. Then add hostels, items and users (give each warden a hostel and a password).
+
+To try it with sample data, use **Settings → Load sample data**, or run the workflow with **Load sample data** ticked.
+
+## Run locally
+
+```
+cp public/api/config.sample.php public/api/config.php   # fill in your local MySQL details
+php -S localhost:8000 -t public
+```
