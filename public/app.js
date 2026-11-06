@@ -228,7 +228,7 @@ V.home = () => {
   const maxH = Math.max(1, ...byH.map((x) => x.n));
 
   const apprList = incoming.length ? `<ul class="list">${incoming.map((i) => `<li><div class="ic violet">${ic("move")}</div><div class="tx"><b>${esc(iName(i.itemId))} × ${nf(i.qty)} ${esc(iUnit(i.itemId))}</b><span>${esc(hName(i.hostelId))} → ${esc(hName(i.toHostelId))} · ${fmtD(i.at)} · <span class="mono">${esc(i.no)}</span></span></div><div class="rt acts">${canWriteHostel(i.toHostelId) ? `<button class="btn sm pri" data-act="receive" data-id="${i.id}">${ic("edit")}Update</button>` : ""}</div></li>`).join("")}</ul>`
-    : `<div class="empty">${ic("check")}<div>Nothing waiting to be received.</div></div>`;
+    : `<div class="empty">${ic("check")}<div>No incoming transfers waiting to be received.</div></div>`;
   const recentList = recent.length ? `<ul class="list">${recent.map((t) => { const k = KIND[t.kind]; const icn = { in: "in", transfer_in: "move", transfer_out: "move", repair_out: "wrench", repair_return: "wrench", damaged: "alert" }[t.kind] || "box"; return `<li><div class="ic ${k.c === "blue" ? "blue" : k.c}">${ic(icn)}</div><div class="tx"><b>${esc(iName(t.itemId))}</b><span>${esc(k.l)} · ${esc(hName(t.hostelId))}${t.otherHostelId ? (t.dir > 0 ? " from " : " to ") + esc(hName(t.otherHostelId)) : ""} · ${fmtD(t.at)}</span></div><div class="rt ${t.dir > 0 ? "qin" : "qout"}">${t.dir > 0 ? "+" : "−"}${nf(t.qty)}</div></li>`; }).join("")}</ul>`
     : `<div class="empty">${ic("inbox")}<div>No movements yet.</div></div>`;
   const repList = repairs.length ? `<ul class="list">${repairs.map((i) => `<li><div class="ic amber">${ic("wrench")}</div><div class="tx"><b>${esc(iName(i.itemId))} × ${nf(outstanding(i))}</b><span>${esc(hName(i.hostelId))}${i.place ? " · " + esc(i.place) : ""} · sent ${fmtD(i.at)}</span></div><div class="rt">${isOverdue(i) ? `<span class="b red">Overdue</span>` : i.expectedAt ? `<span class="b">Due ${fmtD(i.expectedAt)}</span>` : ""}</div></li>`).join("")}</ul>`
@@ -241,13 +241,13 @@ V.home = () => {
     + stats([
       { v: nf(total), l: "Items in stock", go: "inventory" },
       { v: nf(new Set(rows.filter((r) => r.current > 0).map((r) => r.itemId)).size), l: "Item types in stock", tone: "cyan", go: "inventory" },
-      { v: nf(M.incoming.length), l: "Waiting to be received", tone: M.incoming.length ? "amber" : "slate", go: "receive" },
-      { v: nf(M.outgoing.length), l: "Transfers sent, not yet received", tone: "violet", go: "sent" },
+      { v: nf(M.incoming.length), l: "Incoming transfers", tone: M.incoming.length ? "amber" : "slate", go: "receive" },
+      { v: nf(M.outgoing.length), l: "Outgoing transfers", tone: "violet", go: "sent" },
       { v: nf(atRep), l: overdue ? `At repair · ${overdue} overdue` : "At repair", tone: overdue ? "red" : "amber", go: "repairs" },
       { v: nf(dmgMonth), l: "Damaged this month", tone: "red", go: "damaged" },
       { v: nf(M.exp30), l: "Warranties expiring in 30 days", tone: M.exp30 ? "red" : "green", go: "warranties" },
     ], true)
-    + `<div class="grid2"><div><div class="card"><div class="ch"><h3>Waiting to be received</h3><a href="#receive" class="sub">See all</a></div>${apprList}</div><div class="card"><div class="ch"><h3>Recent movements</h3><a href="#issues" class="sub">Issue register</a></div>${recentList}</div></div>`
+    + `<div class="grid2"><div><div class="card"><div class="ch"><h3>Incoming transfers</h3><a href="#receive" class="sub">See all</a></div>${apprList}</div><div class="card"><div class="ch"><h3>Recent movements</h3><a href="#issues" class="sub">Issue register</a></div>${recentList}</div></div>`
     + `<div>${hostelBars}<div class="card"><div class="ch"><h3>At repair</h3><a href="#repairs" class="sub">Track repairs</a></div>${repList}</div><div class="card"><div class="ch"><h3>Warranties expiring soon</h3><a href="#warranties" class="sub">All warranties</a></div>${warList}</div></div></div>`;
 };
 function daysBadge(n) {
@@ -508,8 +508,8 @@ V.issues = () => {
 /* ---------- approvals ---------- */
 /* Approvals: three pages in the left menu, one per view. */
 const APPROVAL_VIEWS = {
-  receive: { show: "in", title: "Waiting for me to receive", empty: "Nothing waiting to be received.", csv: "transfers-to-receive" },
-  sent: { show: "out", title: "Sent, not yet received", empty: "Nothing sent that's waiting to be received.", csv: "transfers-sent" },
+  receive: { show: "in", title: "Incoming transfers", empty: "No incoming transfers waiting to be received.", csv: "incoming-transfers" },
+  sent: { show: "out", title: "Outgoing transfers", empty: "No outgoing transfers waiting to be received.", csv: "outgoing-transfers" },
   transfers: { show: "all", title: "All transfers", empty: "No transfers yet.", csv: "transfers-all" },
 };
 function approvalsView(key) {
@@ -967,7 +967,7 @@ function issueForm(kind = "transfer") {
       { k: "at", l: "Date", type: "date", val: today(), half: 1 },
       { k: "toHostelId", l: "To hostel", type: "select", blank: "— Choose hostel —", req: 1, show: (v) => v.kind === "transfer",
         opts: (v) => S.d.hostels.filter((h) => h.active && h.id !== +v.hostelId).map((h) => [h.id, h.name]),
-        help: "The receiving hostel will see this under Approvals. Stock moves when they update the quantity received." },
+        help: "The receiving hostel will see this under Incoming transfers. Stock moves when they update the quantity received." },
       { k: "place", l: "Sent to (repairer)", ph: "e.g. Sharma Electricals", show: (v) => v.kind === "repair", half: 1, list: [...new Set(S.d.issues.filter((i) => i.kind === "repair" && i.place).map((i) => i.place))] },
       { k: "expectedAt", l: "Expected back", type: "date", show: (v) => v.kind === "repair", half: 1 },
       { k: "dplace", l: "Sent to after damage (optional)", type: "select", blank: "— Not sent anywhere —", show: (v) => v.kind === "damage", opts: () => S.d.damagePlaces.map((p) => [p.name, p.name]) },
@@ -1120,8 +1120,8 @@ const NAV = [
   { g: "Overview" }, { v: "home", l: "Dashboard", i: "home" }, { v: "inventory", l: "Inventory", i: "box" }, { v: "ledger", l: "Item ledger", i: "book" },
   { g: "Movements" }, { v: "stock", l: "Stock in", i: "in" }, { v: "issues", l: "Issue register", i: "send" },
 { v: "repairs", l: "Repairs", i: "wrench", n: () => M.openRepairs.length }, { v: "damaged", l: "Damaged", i: "alert" },
-  { g: "Approvals" }, { v: "receive", l: "Waiting for me to receive", i: "inbox", n: () => M.incoming.length, hot: 1 },
-  { v: "sent", l: "Sent, not yet received", i: "send", n: () => M.outgoing.length }, { v: "transfers", l: "All transfers", i: "list" },
+  { g: "Approvals" }, { v: "receive", l: "Incoming transfers", i: "inbox", n: () => M.incoming.length, hot: 1 },
+  { v: "sent", l: "Outgoing transfers", i: "send", n: () => M.outgoing.length }, { v: "transfers", l: "All transfers", i: "list" },
   { g: "Records" }, { v: "warranties", l: "Warranties", i: "shield", n: () => M.exp30, hot: 1 },
   { g: "Masters", admin: 1 }, { v: "hostels", l: "Hostels", i: "building", admin: 1 }, { v: "items", l: "Items", i: "tag", admin: 1 }, { v: "categories", l: "Categories", i: "folder", admin: 1 }, { v: "units", l: "Units", i: "box", admin: 1 },
   { v: "places", l: "Damage destinations", i: "trash", admin: 1 }, { v: "users", l: "Users", i: "users", admin: 1 }, { v: "settings", l: "Settings", i: "settings", admin: 1 },
