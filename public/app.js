@@ -956,9 +956,9 @@ function issueForm(kind = "transfer") {
   const startH = M.admin ? hs[0][0] : M.myH;
   const itemsFor = (h) => S.d.items.filter((i) => available(+h, i.id) > 0);
   openForm({
-    title: "Issue asset", sub: "Move to another hostel, send for repair, or mark as damaged",
+    title: "Issue asset", sub: "Transfer to another hostel, send for repair, or mark as damaged",
     fields: [
-      { k: "kind", l: "What is happening?", type: "seg", opts: () => [["transfer", "Move to hostel", "move"], ["repair", "Send for repair", "wrench"], ["damage", "Damaged", "alert"]], val: kind },
+      { k: "kind", l: "What is happening?", type: "seg", opts: () => [["transfer", "Transfer", "move"], ["repair", "Repair", "wrench"], ["damage", "Damaged", "alert"]], val: kind },
       { k: "hostelId", l: "From hostel", type: "select", opts: () => hs, val: String(startH), show: () => M.admin },
       { k: "itemId", l: "Item", type: "select", blank: "— Choose item —", req: 1, opts: (v) => groupedItems(itemsFor(v.hostelId)),
         help: (v) => (itemsFor(v.hostelId).length ? (v.itemId ? { t: `Available to issue: <b>${nf(available(+v.hostelId, +v.itemId))}</b> ${esc(iUnit(+v.itemId))}`, c: "good" } : "") : { t: "This hostel has no stock to issue yet.", c: "warn" }) },
