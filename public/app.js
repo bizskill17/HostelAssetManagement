@@ -742,9 +742,8 @@ function openForm(o) {
     body.innerHTML = o.fields.map((fd) => {
       if (fd.show && !fd.show(vals)) return "";
       const v = vals[fd.k] ?? "";
-      const lab = `<label for="f_${fd.k}">${esc(typeof fd.l === "function" ? fd.l(vals) : fd.l)}${fd.req ? ' <span class="req">*</span>' : ""}</label>`;
-      const help = typeof fd.help === "function" ? fd.help(vals) : fd.help;
-      const helpH = help ? `<div class="help ${typeof help === "object" ? help.c || "" : ""}">${typeof help === "object" ? help.t : esc(help)}</div>` : "";
+      const lab = `<label for="f_${fd.k}">${labText(fd)}</label>`;
+      const helpH = `<div class="help" data-help="${fd.k}"></div>`;
       let ctl;
       if (fd.type === "info") return `<div class="summary">${fd.html(vals)}</div>`;
       if (fd.type === "select") ctl = `<select id="f_${fd.k}" name="${fd.k}">${fd.blank !== undefined ? `<option value="">${esc(fd.blank)}</option>` : ""}${fd.opts(vals).map(([ov, ol]) => `<option value="${esc(ov)}"${String(ov) === String(v) ? " selected" : ""}>${esc(ol)}</option>`).join("")}</select>`;
@@ -754,17 +753,34 @@ function openForm(o) {
       else ctl = `<input id="f_${fd.k}" name="${fd.k}" type="${fd.type || "text"}" value="${esc(v)}" placeholder="${esc(fd.ph || "")}" ${fd.type === "number" ? 'min="0" step="1" inputmode="numeric"' : ""} ${fd.ro ? "readonly tabindex=\"-1\" style=\"background:var(--line2);font-weight:700\"" : ""} ${fd.list ? `list="l_${fd.k}"` : ""} autocomplete="${fd.type === "password" ? "new-password" : "off"}">${fd.list ? `<datalist id="l_${fd.k}">${fd.list.map((x) => `<option value="${esc(x)}">`).join("")}</datalist>` : ""}`;
       return `<div class="fld${fd.half ? " half" : ""}">${lab}${ctl}${helpH}</div>`;
     }).join("") + `<div class="err"></div>`;
+    refresh();
   };
+  // Labels and hints change with the values; update them in place so typing is never interrupted.
+  function labText(fd) { return `${esc(typeof fd.l === "function" ? fd.l(vals) : fd.l)}${fd.req ? ' <span class="req">*</span>' : ""}`; }
+  function refresh() {
+    for (const fd of o.fields) {
+      const h = body.querySelector(`[data-help="${fd.k}"]`);
+      if (h) {
+        const help = typeof fd.help === "function" ? fd.help(vals) : fd.help;
+        h.className = "help " + (help && typeof help === "object" ? help.c || "" : "");
+        h.innerHTML = help ? (typeof help === "object" ? help.t : esc(help)) : "";
+        h.hidden = !help;
+      }
+      const l = typeof fd.l === "function" && body.querySelector(`label[for="f_${fd.k}"]`);
+      if (l) l.innerHTML = labText(fd);
+    }
+  }
   draw();
-  const redraw = (focusName) => {
-    const active = document.activeElement && document.activeElement.name;
-    const pos = document.activeElement && document.activeElement.selectionStart;
-    draw();
-    const el = form.elements[focusName || active];
-    if (el && el.focus) { el.focus(); try { if (pos != null) el.setSelectionRange(pos, pos); } catch (_) {} }
+  // Only choices that can show or hide other fields (dropdowns, checkboxes) rebuild the form.
+  const rebuilds = (el) => el.tagName === "SELECT" || el.type === "checkbox";
+  const onField = (e) => {
+    read();
+    if (o.onChange) o.onChange(vals, e.target.name);
+    if (rebuilds(e.target)) { const n = e.target.name; draw(); const el = form.elements[n]; if (el && el.focus) el.focus(); }
+    else refresh();
   };
-  form.addEventListener("change", (e) => { read(); if (o.onChange) o.onChange(vals, e.target.name); redraw(e.target.name); });
-  form.addEventListener("input", (e) => { if (e.target.type === "number" || e.target.tagName === "SELECT") { read(); if (o.onChange) o.onChange(vals, e.target.name); redraw(e.target.name); } });
+  form.addEventListener("change", (e) => { if (rebuilds(e.target)) onField(e); else { read(); refresh(); } });
+  form.addEventListener("input", (e) => { if (!rebuilds(e.target)) onField(e); });
   form.addEventListener("click", (e) => {
     const sb = e.target.closest("[data-seg]");
     if (sb) { read(); vals[sb.dataset.seg] = sb.dataset.v; if (o.onChange) o.onChange(vals, sb.dataset.seg); draw(); return; }
