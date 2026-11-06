@@ -72,11 +72,12 @@ svg.i{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-widt
 .btn:disabled{opacity:.55;cursor:default}
 
 /* ---------- stat cards ---------- */
-.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-bottom:16px}
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-bottom:16px}
 .stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;box-shadow:var(--sh);position:relative;overflow:hidden}
 .stat::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--tone,var(--brand))}
-.stat .v{font-family:var(--display);font-size:25px;font-weight:800;line-height:1.1;color:var(--ink)}
-.stat .l{color:var(--muted);font-size:12.5px;font-weight:500;margin-top:3px}
+.stat{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:62px}
+.stat .v{font-family:var(--display);font-size:24px;font-weight:800;line-height:1.1;color:var(--ink);text-align:right;white-space:nowrap;flex:none}
+.stat .l{color:var(--ink2);font-size:13px;font-weight:500;line-height:1.3}
 .stat.click{cursor:pointer}.stat.click:hover{border-color:#cfd5e3}
 .t-green{--tone:var(--green)}.t-amber{--tone:#e08a0b}.t-red{--tone:var(--red)}.t-violet{--tone:var(--violet)}.t-cyan{--tone:var(--cyan)}.t-slate{--tone:#8a93ab}
 
@@ -132,7 +133,8 @@ tfoot td{background:#f8f9fc;font-weight:700;border-top:1px solid var(--line)}
 .qin{color:var(--green);font-weight:600}.qout{color:var(--red);font-weight:600}
 
 /* ---------- dashboard ---------- */
-.grid2{display:grid;grid-template-columns:1.25fr 1fr;gap:14px}
+.grid2{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:14px}
+.grid2>div{min-width:0}
 .list{list-style:none;margin:0;padding:0}
 .list li{display:flex;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line2)}
 .list li:last-child{border-bottom:0}
@@ -206,7 +208,7 @@ tfoot td{background:#f8f9fc;font-weight:700;border-top:1px solid var(--line)}
 
 /* ---------- mobile ---------- */
 .bnav,.scrim{display:none}
-@media (max-width:1100px){.grid2{grid-template-columns:1fr}}
+@media (max-width:1100px){.grid2{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:900px){
   .side{position:fixed;left:0;top:0;transform:translateX(-102%);transition:transform .2s;box-shadow:var(--sh-l)}
   body.drawer .side{transform:none}
@@ -217,7 +219,7 @@ tfoot td{background:#f8f9fc;font-weight:700;border-top:1px solid var(--line)}
   .ph h1{font-size:21px}
   .ph .acts .btn span.l{display:none}
   .stats{grid-template-columns:repeat(2,1fr);gap:9px}
-  .stat{padding:11px 13px}.stat .v{font-size:21px}
+  .stat{padding:10px 13px;min-height:54px}.stat .v{font-size:20px}.stat .l{font-size:12.5px}
   .filters select,.filters input[type=date]{flex:1 1 140px;max-width:none}
   .bnav{display:flex;position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);z-index:20;padding:6px 6px calc(6px + env(safe-area-inset-bottom))}
   .bnav a{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;font-weight:600;color:var(--muted);padding:4px 0;position:relative}
