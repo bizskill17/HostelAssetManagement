@@ -66,7 +66,7 @@ jobs:
         env:
           FTP_USER: ${{ secrets.FTP_USERNAME }}
           LFTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-          SITE_URL: ${{ vars.SITE_URL || 'https://assettracker.bizskilledu.com' }}
+          SITE_URL: ${{ vars.SITE_URL || 'https://hostelassettracker.bizskilledu.com' }}
           FIXED_DIR: ${{ vars.FTP_SERVER_DIR }}
         run: |
           HOST="${FTP_SERVER#ftp://}"; HOST="${HOST%/}"
@@ -116,7 +116,7 @@ jobs:
         if: env.FTP_SERVER != '' && (inputs.load_sample_data || contains(github.event.head_commit.message, '[seed]'))
         env:
           DB_PASS: ${{ secrets.DB_PASS }}
-          SITE_URL: ${{ vars.SITE_URL || 'https://assettracker.bizskilledu.com' }}
+          SITE_URL: ${{ vars.SITE_URL || 'https://hostelassettracker.bizskilledu.com' }}
         run: |
           KEY=$(python3 -c "import hmac,hashlib,os;print(hmac.new(os.environ['DB_PASS'].encode(),b'hostel-assets-seed',hashlib.sha256).hexdigest())")
           curl -fsS --max-time 60 "$SITE_URL/api/index.php?a=seed&key=$KEY"; echo
@@ -127,7 +127,7 @@ jobs:
         if: env.FTP_SERVER != '' && (inputs.clear_data || contains(github.event.head_commit.message, '[clear-data]'))
         env:
           DB_PASS: ${{ secrets.DB_PASS }}
-          SITE_URL: ${{ vars.SITE_URL || 'https://assettracker.bizskilledu.com' }}
+          SITE_URL: ${{ vars.SITE_URL || 'https://hostelassettracker.bizskilledu.com' }}
         run: |
           KEY=$(python3 -c "import hmac,hashlib,os;print(hmac.new(os.environ['DB_PASS'].encode(),b'hostel-assets-clear',hashlib.sha256).hexdigest())")
           curl -fsS --max-time 60 "$SITE_URL/api/index.php?a=clear&key=$KEY"; echo

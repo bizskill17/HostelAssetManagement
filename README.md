@@ -61,7 +61,7 @@ The tables all start with `ha_`, so this app can share a database with the older
 
 1. **Database**: in hPanel go to **Websites → Manage → Databases** and create a database and user. The tables are created automatically on first visit.
 2. **FTP**: under **hPanel → Files → FTP Accounts**, note the FTP IP and username (reset the password if you need to).
-3. **GitHub secrets**: under **Settings → Secrets and variables → Actions**, add `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD`, `DB_HOST` (`localhost`), `DB_NAME`, `DB_USER`, `DB_PASS`. Set the repository **variable** `SITE_URL` to your domain (default: `https://assettracker.bizskilledu.com`).
+3. **GitHub secrets**: under **Settings → Secrets and variables → Actions**, add `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD`, `DB_HOST` (`localhost`), `DB_NAME`, `DB_USER`, `DB_PASS`. Set the repository **variable** `SITE_URL` to your domain (default: `https://hostelassettracker.bizskilledu.com`).
 4. **Deploy**: run **Actions → Deploy to Hostinger**, or push to `main`.
 5. **First sign-in**: the first visit asks you to create the Admin account. Then add hostels, items and users (give each warden a hostel and a password).
 
