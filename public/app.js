@@ -385,7 +385,7 @@ V.stock = () => {
     { h: "Notes", t: (t) => t.notes || "", cls: "wrap" },
     { h: "Entered by", t: (t) => uName(t.createdBy), cls: "dim nw" },
   ];
-  if (M.admin) cols.push({ h: "", t: () => "", nocsv: 1, nosort: 1, html: (t) => `<div class="rowacts"><button class="iconbtn" title="Delete entry" data-act="deltxn" data-id="${t.id}">${ic("trash")}</button></div>` });
+  if (M.admin) cols.push({ h: "", t: () => "", nocsv: 1, nosort: 1, html: (t) => `<div class="rowacts"><button class="iconbtn del" title="Delete entry" data-act="deltxn" data-id="${t.id}">${ic("trash")}</button></div>` });
   return head("Stock in", "Opening stock and items received at each hostel", `${csvBtn("stock")}<button class="btn pri" data-act="stockin">${ic("plus")}<span class="l">Add stock</span></button>`)
     + stats([
       { v: nf(rows.length), l: "Entries" },
@@ -602,7 +602,7 @@ V.warranties = () => {
     { h: "Expiry", t: (w) => w.expiryAt, html: (w) => `<b>${fmtD(w.expiryAt)}</b>`, cls: "nw" },
     { h: "Status", t: (w) => w.daysLeft, csv: (w) => (w.daysLeft < 0 ? "Expired" : w.daysLeft + " days left"), num: 1, html: (w) => daysBadge(w.daysLeft) },
     { h: "Notes", t: (w) => w.notes || "", cls: "wrap" },
-    { h: "", t: () => "", nocsv: 1, nosort: 1, html: (w) => (canWriteHostel(w.hostelId) ? `<div class="rowacts"><button class="iconbtn" title="Edit" data-act="warranty" data-id="${w.id}">${ic("edit")}</button><button class="iconbtn" title="Delete" data-act="delwarranty" data-id="${w.id}">${ic("trash")}</button></div>` : "") },
+    { h: "", t: () => "", nocsv: 1, nosort: 1, html: (w) => (canWriteHostel(w.hostelId) ? `<div class="rowacts"><button class="iconbtn" title="Edit" data-act="warranty" data-id="${w.id}">${ic("edit")}</button>${M.admin ? `<button class="iconbtn del" title="Delete" data-act="delwarranty" data-id="${w.id}">${ic("trash")}</button>` : ""}</div>` : "") },
   ];
   const inN = (a, b) => M.warr.filter((w) => w.daysLeft >= a && w.daysLeft <= b).length;
   return head("Warranties", "Track warranties and see what is about to expire", `${csvBtn("warranties")}<button class="btn pri" data-act="warranty">${ic("plus")}<span class="l">Add warranty</span></button>`)
@@ -691,7 +691,7 @@ function masterView(key) {
   const m = MASTERS[key];
   const f = fv(key);
   const rows = m.rows().filter((r) => match(f.q, ...m.search(r))).filter((r) => !f.st || (f.st === "a" ? r.active !== false : r.active === false)).filter((r) => !f.role || r.role === f.role).slice().sort((a, b) => cmp(a.name, b.name));
-  const cols = m.cols.concat([{ h: "", t: () => "", nocsv: 1, nosort: 1, html: (r) => `<div class="rowacts"><button class="iconbtn" title="Edit" data-act="mEdit" data-m="${key}" data-id="${r.id}">${ic("edit")}</button><button class="iconbtn" title="Delete" data-act="mDel" data-m="${key}" data-id="${r.id}">${ic("trash")}</button></div>` }]);
+  const cols = m.cols.concat([{ h: "", t: () => "", nocsv: 1, nosort: 1, html: (r) => `<div class="rowacts"><button class="iconbtn" title="Edit" data-act="mEdit" data-m="${key}" data-id="${r.id}">${ic("edit")}</button><button class="iconbtn del" title="Delete" data-act="mDel" data-m="${key}" data-id="${r.id}">${ic("trash")}</button></div>` }]);
   const all = m.rows();
   const st = [{ v: nf(all.length), l: m.title }];
   if (key === "hostels" || key === "items") st.push({ v: nf(all.filter((r) => r.active).length), l: "Active", tone: "green" }, { v: nf(all.filter((r) => !r.active).length), l: "Inactive", tone: "slate" });

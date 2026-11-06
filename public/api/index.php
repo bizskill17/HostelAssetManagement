@@ -691,12 +691,9 @@ try {
         }
 
         case 'warranty.delete': {
-            $u = requireUser();
-            $id = idOrNull(body()['id'] ?? null) ?? 0;
-            $w = q("SELECT * FROM ha_warranties WHERE id=?", [$id])->fetch();
-            if ($w && (isAdmin($u) || (int) $w['hostel_id'] === $u['hostel_id'])) {
-                q("DELETE FROM ha_warranties WHERE id=?", [$id]);
-            }
+            // Only an Admin can delete entries.
+            requireAdmin();
+            q("DELETE FROM ha_warranties WHERE id=?", [idOrNull(body()['id'] ?? null) ?? 0]);
             out(['ok' => true]);
         }
 
