@@ -752,8 +752,19 @@ try {
             fail('Unknown action.', 404);
     }
 } catch (PDOException $e) {
-    if (db()->inTransaction()) {
-        db()->rollBack();
+    try {
+        if (db()->inTransaction()) {
+            db()->rollBack();
+        }
+    } catch (PDOException $ignored) {
+        // Could not even connect; handled below.
+    }
+    if ((int) ($e->errorInfo[1] ?? 0) === 1045 || str_contains($e->getMessage(), '[1045]')) {
+        error_log('[hostel-assets] ' . $e->getMessage());
+        fail('The app could not log in to the database. Check the DB_USER and DB_PASS secrets in GitHub, then re-run the deploy.', 500, 'unavailable');
+    }
+    if ((int) ($e->errorInfo[1] ?? 0) === 1049 || str_contains($e->getMessage(), '[1049]')) {
+        fail('The database named in DB_NAME does not exist. Check the DB_NAME secret in GitHub, then re-run the deploy.', 500, 'unavailable');
     }
     if ($e->getCode() === '23000') {
         fail('That name or email is already used by another record.');
