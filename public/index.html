@@ -48,6 +48,7 @@ svg.i{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-widt
 .me .t{min-width:0;flex:1}.me b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.me .t span{font-size:12px;color:var(--muted);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .iconbtn{border:0;background:transparent;width:34px;height:34px;border-radius:9px;display:grid;place-items:center;color:var(--muted);cursor:pointer}
 .iconbtn:hover{background:var(--line2);color:var(--ink)}
+.iconbtn:disabled{opacity:.3;cursor:not-allowed;background:transparent!important;color:var(--muted)!important}
 .iconbtn.del:hover{background:var(--red-s);color:var(--red)}
 .main{flex:1;min-width:0;padding:26px 30px 60px}
 .topbar{display:none}
@@ -113,7 +114,12 @@ td .b{white-space:normal;line-height:1.3;display:inline-flex;align-items:baselin
 td .b::before{flex:none;transform:translateY(-1px)}
 td .rowacts{flex-wrap:wrap;gap:5px}
 td .rowacts .btn.sm{padding:5px 9px;white-space:normal;text-align:center;line-height:1.25}
-tr:last-child td{border-bottom:0}
+/* cell borders on every table */
+.tw table{border-collapse:collapse}
+.tw th,.tw td{border:1px solid var(--line)}
+.tw tr:first-child th{border-top:0}
+.tw tr>:first-child{border-left:0}.tw tr>:last-child{border-right:0}
+.tw tbody tr:last-child td{border-bottom:0}
 tbody tr:hover td{background:#fafbff}
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 td.strong{font-weight:700}
@@ -246,7 +252,7 @@ tfoot td{background:#f8f9fc;font-weight:700;border-top:1px solid var(--line)}
   .sortbar{display:flex}
   .tw tbody tr{padding:10px 14px;border-bottom:1px solid var(--line)}
   .tw tbody tr:last-child{border-bottom:0}
-  .tw td{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:4px 0;border:0;text-align:right;min-height:26px}
+  .tw td{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:4px 0;border:0!important;text-align:right;min-height:26px}
   .tw td::before{content:attr(data-l);color:var(--muted);font-size:12px;font-weight:500;text-align:left;flex:none}
   .tw td:empty,.tw td.nofoot,.tw td:has(>span:empty){display:none}
   .tw td:first-child{font-weight:700;font-size:14.5px;padding-bottom:6px}

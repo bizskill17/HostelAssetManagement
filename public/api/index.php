@@ -603,14 +603,8 @@ try {
             db()->beginTransaction();
             lockHostel((int) $i['hostel_id']);
             if ($i['kind'] === 'transfer' && in_array($i['status'], ['received', 'short', 'approved'], true)) {
-                // Deleting takes the items back off the receiving hostel, so they must still be there.
-                $recv = (int) $i['to_hostel_id'];
-                lockHostel($recv);
-                $got = (int) ($i['received_qty'] ?? $i['qty']);
-                if (onHand($recv, (int) $i['item_id']) - pendingOut($recv, (int) $i['item_id']) < $got) {
-                    db()->rollBack();
-                    fail('The receiving hostel has already issued some of these items, so this transfer can\'t be deleted.');
-                }
+                db()->rollBack();
+                fail('This transfer has been received, so it can\'t be deleted.');
             }
             q("DELETE FROM ha_txns WHERE issue_id=?", [$i['id']]);
             q("DELETE FROM ha_issues WHERE id=?", [$i['id']]);

@@ -468,6 +468,7 @@ function recvHtml(i) {
   if (i.receivedQty == null) return i.status === "pending" ? `<span class="dim">—</span>` : "";
   return i.receivedQty < i.qty ? `<span class="qout">${nf(i.receivedQty)}</span>` : `<span class="qin">${nf(i.receivedQty)}</span>`;
 }
+const isReceived = (i) => i.kind === "transfer" && ["received", "short", "approved"].includes(i.status);
 function issueActs(i) {
   const b = [];
   if (i.kind === "transfer" && i.status === "pending") {
@@ -475,7 +476,9 @@ function issueActs(i) {
     if (canWriteHostel(i.hostelId)) b.push(`<button class="btn sm" data-act="cancel" data-id="${i.id}">Cancel</button>`);
   }
   if (i.kind === "repair" && outstanding(i) > 0 && (i.status === "at_repair" || i.status === "partly_returned") && canWriteHostel(i.hostelId)) b.push(`<button class="btn sm ok" data-act="return" data-id="${i.id}">Record return</button>`);
-  if (M.admin) b.push(`<button class="iconbtn del" title="Delete this issue" data-act="delissue" data-id="${i.id}">${ic("trash")}</button>`);
+  if (M.admin) b.push(isReceived(i)
+    ? `<button class="iconbtn" disabled title="Received transfers can't be deleted">${ic("trash")}</button>`
+    : `<button class="iconbtn del" title="Delete this issue" data-act="delissue" data-id="${i.id}">${ic("trash")}</button>`);
   return `<div class="rowacts">${b.join("")}</div>`;
 }
 V.issues = () => {
@@ -505,10 +508,10 @@ V.issues = () => {
 /* ---------- approvals ---------- */
 V.approvals = () => {
   const f = fv("approvals");
-  const show = f.show || "in";
+  const show = f.show || (f.st && f.st !== "pending" ? "all" : "in");
   const all = S.d.issues.filter((i) => i.kind === "transfer");
   let rows = show === "in" ? M.incoming : show === "out" ? M.outgoing : all;
-  rows = rows.filter((i) => (!f.h || i.hostelId === +f.h || i.toHostelId === +f.h) && inRange(i.at, f) && match(f.q, i.no, iName(i.itemId), hName(i.hostelId), hName(i.toHostelId), i.notes, i.decisionNote));
+  rows = rows.filter((i) => (!f.st || i.status === f.st || (f.st === "received" && i.status === "approved")) && (!f.h || i.hostelId === +f.h || i.toHostelId === +f.h) && inRange(i.at, f) && match(f.q, i.no, iName(i.itemId), hName(i.hostelId), hName(i.toHostelId), i.notes, i.decisionNote));
   const since = addDays(today(), -30);
   const recent = all.filter((i) => i.decidedAt && isoOf(new Date(i.decidedAt)) >= since && i.receivedQty != null);
   const short = (i) => (i.receivedQty == null ? "" : i.qty - i.receivedQty);
@@ -540,6 +543,7 @@ V.approvals = () => {
     + filterBar("approvals", [
       { k: "q", type: "search", ph: "Search no., item or hostel" },
       { k: "show", l: "Show", opts: [["out", "Sent by " + (M.admin ? "hostels" : "us") + ", not yet received"], ["all", "All transfers"]], all: "Waiting for me to receive" },
+      { k: "st", l: "Status", opts: [["pending", "Awaiting receipt"], ["received", "Received"], ["short", "Received short"], ["rejected", "Not received"], ["cancelled", "Cancelled"]], all: "All statuses" },
       { k: "h", l: "Hostel", opts: S.d.hostels.map((h) => [h.id, h.name]), all: "All hostels", hide: !M.admin },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
     ])
