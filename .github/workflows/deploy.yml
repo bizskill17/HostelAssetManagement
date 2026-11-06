@@ -1,0 +1,133 @@
+name: Deploy to Hostinger
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      load_sample_data:
+        description: "Load sample data (Block A–D) after deploying"
+        type: boolean
+        default: false
+      clear_data:
+        description: "DELETE all blocks, rooms, assets and movements (masters are kept)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-hostinger
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FTP_SERVER: ${{ secrets.FTP_SERVER }}
+    steps:
+      - name: Get latest code
+        uses: actions/checkout@v5
+
+      - name: Check that secrets are set
+        if: env.FTP_SERVER == ''
+        run: |
+          echo "::warning::Deployment skipped. Add FTP_SERVER, FTP_USERNAME, FTP_PASSWORD, DB_HOST, DB_NAME, DB_USER and DB_PASS under Settings → Secrets and variables → Actions, then re-run this workflow."
+
+      - name: Check PHP syntax
+        run: for f in public/api/*.php; do php -l "$f"; done
+
+      - name: Write database config from secrets
+        if: env.FTP_SERVER != ''
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASS: ${{ secrets.DB_PASS }}
+        run: |
+          python3 - <<'PY'
+          import os
+          def q(v): return "'" + v.replace("\\", "\\\\").replace("'", "\\'") + "'"
+          lines = ["<?php"] + [f"define('{k}', {q(os.environ.get(k, ''))});" for k in ("DB_HOST", "DB_NAME", "DB_USER", "DB_PASS")]
+          open("public/api/config.php", "w").write("\n".join(lines) + "\n")
+          PY
+
+      - name: Stamp script links with this version (cache busting)
+        if: env.FTP_SERVER != ''
+        run: sed -i "s#src=\"hosted.js\"#src=\"hosted.js?v=${GITHUB_SHA::8}\"#" public/index.html && grep -o 'hosted.js?v=[a-f0-9]*' public/index.html
+
+      - name: Install lftp
+        if: env.FTP_SERVER != ''
+        run: sudo apt-get update -q >/dev/null && sudo apt-get install -y -q lftp >/dev/null && lftp --version | head -1
+
+      # Finds which FTP folder the website actually serves (the login folder itself, or public_html/
+      # inside it) by uploading a probe file to each and requesting it over HTTPS, then mirrors public/ there.
+      - name: Upload to Hostinger via FTP
+        if: env.FTP_SERVER != ''
+        env:
+          FTP_USER: ${{ secrets.FTP_USERNAME }}
+          LFTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          SITE_URL: ${{ vars.SITE_URL || 'https://assettracker.bizskilledu.com' }}
+          FIXED_DIR: ${{ vars.FTP_SERVER_DIR }}
+        run: |
+          HOST="${FTP_SERVER#ftp://}"; HOST="${HOST%/}"
+          SSL=no
+          ftpcmd() {
+            lftp -e "
+              set ftp:ssl-allow $SSL; set ftp:ssl-force $SSL; set ftp:ssl-protect-data $SSL; set ssl:verify-certificate no;
+              set ftp:passive-mode on; set ftp:prefer-epsv no; set ftp:fix-pasv-address yes;
+              set net:timeout 20; set net:max-retries 3; set net:reconnect-interval-base 5;
+              set cmd:fail-exit yes;
+              open -u $FTP_USER --env-password ftp://$HOST;
+              $1
+              bye"
+          }
+          # Plain FTP first; switch to FTP over TLS if that fails.
+          if ! ftpcmd "cls -1 >/dev/null;"; then echo "::warning::Plain FTP failed, using FTP over TLS"; SSL=yes; ftpcmd "cls -1 >/dev/null;"; fi
+
+          if [ -n "$FIXED_DIR" ]; then
+            DIR="$FIXED_DIR"
+          else
+            PROBE="deploy-probe-${GITHUB_RUN_ID}.txt"
+            echo root > "/tmp/$PROBE.root"; echo sub > "/tmp/$PROBE.sub"
+            ftpcmd "put /tmp/$PROBE.root -o $PROBE; mkdir -p -f public_html; put /tmp/$PROBE.sub -o public_html/$PROBE;" || true
+            GOT=$(curl -fsS --max-time 20 "$SITE_URL/$PROBE" 2>/dev/null | tr -d '[:space:]' || true)
+            ftpcmd "rm -f $PROBE; rm -f public_html/$PROBE;" || true
+            case "$GOT" in
+              root) DIR="./" ;;
+              sub)  DIR="public_html/" ;;
+              *) echo "::error::Couldn't tell which folder $SITE_URL serves (got: '$GOT'). Set repository variable FTP_SERVER_DIR to ./ or public_html/ and re-run."; exit 1 ;;
+            esac
+          fi
+          echo "Web root on FTP: $DIR"
+
+          ftpcmd "mkdir -p -f $DIR; mirror -R --verbose --parallel=1 --no-perms --exclude-glob config.sample.php ./public/ $DIR;"
+          echo "Uploaded to $DIR"
+
+          # If the web root is the login folder, an earlier deploy put a copy in a nested public_html/. Remove that copy.
+          if [ "$DIR" = "./" ]; then
+            if ftpcmd "cls -1 public_html/hosted.js >/dev/null;" 2>/dev/null; then
+              ftpcmd "rm -r -f public_html;" && echo "Removed the misplaced nested public_html/ copy"
+            fi
+          fi
+
+      # Loads sample data when run manually with "Load sample data" ticked,
+      # or when the pushed commit message contains [seed]. Safe to repeat.
+      - name: Load sample data
+        if: env.FTP_SERVER != '' && (inputs.load_sample_data || contains(github.event.head_commit.message, '[seed]'))
+        env:
+          DB_PASS: ${{ secrets.DB_PASS }}
+          SITE_URL: ${{ vars.SITE_URL || 'https://assettracker.bizskilledu.com' }}
+        run: |
+          KEY=$(python3 -c "import hmac,hashlib,os;print(hmac.new(os.environ['DB_PASS'].encode(),b'asset-tracker-seed',hashlib.sha256).hexdigest())")
+          curl -fsS --max-time 60 "$SITE_URL/api/index.php?a=seed&key=$KEY"; echo
+
+      # Permanently deletes blocks, rooms, assets and movements. Runs only when started manually with
+      # "DELETE all…" ticked, or for a pushed commit whose message contains [clear-data].
+      - name: Clear data (blocks, rooms, assets, movements)
+        if: env.FTP_SERVER != '' && (inputs.clear_data || contains(github.event.head_commit.message, '[clear-data]'))
+        env:
+          DB_PASS: ${{ secrets.DB_PASS }}
+          SITE_URL: ${{ vars.SITE_URL || 'https://assettracker.bizskilledu.com' }}
+        run: |
+          KEY=$(python3 -c "import hmac,hashlib,os;print(hmac.new(os.environ['DB_PASS'].encode(),b'asset-tracker-clear',hashlib.sha256).hexdigest())")
+          curl -fsS --max-time 60 "$SITE_URL/api/index.php?a=clear&key=$KEY"; echo
