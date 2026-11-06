@@ -203,7 +203,8 @@ function downloadCSV(key) {
 // Page title with its buttons. Pages carry no tagline under the title.
 const head = (title, _sub, acts = "") => `<div class="ph"><div><h1>${esc(title)}</h1></div><div class="acts">${acts}</div></div>`;
 const csvBtn = (key) => `<button class="btn" data-act="csv" data-key="${key}">${ic("download")}<span class="l">Download CSV</span></button>`;
-const stats = (list) => `<div class="stats">${list.map((s) => `<div class="stat t-${s.tone || "brand"}${s.go ? " click" : ""}" ${s.go ? `data-go="${s.go}"` : ""}><div class="l">${esc(s.l)}</div><div class="v">${esc(s.v)}</div></div>`).join("")}</div>`;
+// Count cards appear only on the Dashboard.
+const stats = (list, onDashboard) => !onDashboard ? "" : `<div class="stats">${list.map((s) => `<div class="stat t-${s.tone || "brand"}${s.go ? " click" : ""}" ${s.go ? `data-go="${s.go}"` : ""}><div class="l">${esc(s.l)}</div><div class="v">${esc(s.v)}</div></div>`).join("")}</div>`;
 const scopeText = () => (M.admin ? `All ${S.d.hostels.length} hostels` : hName(M.myH));
 const canWriteHostel = (h) => M.admin || h === M.myH;
 
@@ -244,7 +245,7 @@ V.home = () => {
       { v: nf(atRep), l: overdue ? `At repair · ${overdue} overdue` : "At repair", tone: overdue ? "red" : "amber", go: "repairs" },
       { v: nf(dmgMonth), l: "Damaged this month", tone: "red", go: "damaged" },
       { v: nf(M.exp30), l: "Warranties expiring in 30 days", tone: M.exp30 ? "red" : "green", go: "warranties" },
-    ])
+    ], true)
     + `<div class="grid2"><div><div class="card"><div class="ch"><h3>Waiting to be received</h3><a href="#approvals" class="sub">See all</a></div>${apprList}</div><div class="card"><div class="ch"><h3>Recent movements</h3><a href="#issues" class="sub">Issue register</a></div>${recentList}</div></div>`
     + `<div>${hostelBars}<div class="card"><div class="ch"><h3>At repair</h3><a href="#repairs" class="sub">Track repairs</a></div>${repList}</div><div class="card"><div class="ch"><h3>Warranties expiring soon</h3><a href="#warranties" class="sub">All warranties</a></div>${warList}</div></div></div>`;
 };
