@@ -172,11 +172,17 @@ function table(key, cols, rows, o = {}) {
   const pages = Math.max(1, Math.ceil(rows.length / PAGE));
   const pg = Math.min(S.page[key] || 0, pages - 1);
   const shown = o.all ? rows : rows.slice(pg * PAGE, pg * PAGE + PAGE);
-  const head = cols.map((c, i) => `<th class="${c.num ? "num" : ""}${c.nosort ? " ns" : ""}" ${c.nosort ? "" : `data-sort="${key}" data-i="${i}"`}>${esc(c.h)}${st && st.i === i ? `<span class="ar">${st.dir > 0 ? "▲" : "▼"}</span>` : ""}</th>`).join("");
+  const head = cols.map((c, i) => {
+    if (c.nosort || !c.h) return `<th class="${c.num ? "num" : ""} ns">${esc(c.h)}</th>`;
+    const on = st && st.i === i;
+    return `<th class="${c.num ? "num" : ""}${on ? " sorted" : ""}" data-sort="${key}" data-i="${i}" title="Sort by ${esc(c.h)}">${esc(c.h)}<span class="ar">${on ? (st.dir > 0 ? "▲" : "▼") : "⇅"}</span></th>`;
+  }).join("");
+  const sortable = cols.map((c, i) => [c, i]).filter(([c]) => c.h && !c.nosort);
+  const sortBar = sortable.length ? `<div class="sortbar"><span>Sort by</span><select data-sortsel="${key}"><option value="">Default order</option>${sortable.map(([c, i]) => `<option value="${i}"${st && st.i === i ? " selected" : ""}>${esc(c.h)}</option>`).join("")}</select>${st ? `<button class="btn sm" data-act="sortdir" data-key="${key}">${st.dir > 0 ? "▲ Low to high" : "▼ High to low"}</button>` : ""}</div>` : "";
   const body = shown.map((r) => `<tr>${cols.map((c) => `<td data-l="${esc(c.h)}" class="${c.num ? "num " : ""}${c.cls || ""}${c.h ? "" : " acts-td"}"><span>${c.html ? c.html(r) : esc(c.t(r))}</span></td>`).join("")}</tr>`).join("");
   const foot = o.foot ? `<tfoot><tr>${cols.map((c, i) => `<td data-l="${esc(c.h)}" class="${c.num ? "num" : ""}${c.foot || i === 0 ? "" : " nofoot"}">${c.foot ? esc(c.foot(rows)) : i === 0 ? "Total" : ""}</td>`).join("")}</tr></tfoot>` : "";
   const pager = !o.all && pages > 1 ? `<div class="pager"><span>Showing ${pg * PAGE + 1}–${pg * PAGE + shown.length} of ${nf(rows.length)}</span><span class="acts"><button class="btn sm" data-act="page" data-key="${key}" data-p="${pg - 1}" ${pg === 0 ? "disabled" : ""}>Previous</button><button class="btn sm" data-act="page" data-key="${key}" data-p="${pg + 1}" ${pg >= pages - 1 ? "disabled" : ""}>Next</button></span></div>` : "";
-  return `<div class="card">${o.title || ""}<div class="tw"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody>${foot}</table></div>${pager}</div>`;
+  return `<div class="card">${o.title || ""}${sortBar}<div class="tw"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody>${foot}</table></div>${pager}</div>`;
 }
 function downloadCSV(key) {
   const c = CSV[key];
@@ -335,16 +341,16 @@ V.ledger = () => {
   const outQ = rows.filter((t) => t.kind !== "bf" && t.dir < 0).reduce((s, t) => s + t.qty, 0);
   const open = rows.filter((t) => t.kind === "opening").reduce((s, t) => s + t.qty, 0) + (rows[0] && rows[0].kind === "bf" ? bf : 0);
   const cols = [
-    { h: "Date", t: (t) => fmtD(t.at), csv: (t) => t.at, cls: "nw", nosort: 1 },
-    { h: "Hostel", t: (t) => (t.kind === "bf" ? "" : hName(t.hostelId)), cls: "nw", nosort: 1 },
-    { h: "Entry", t: (t) => (t.kind === "bf" ? "Balance brought forward" : KIND[t.kind].l), html: (t) => (t.kind === "bf" ? "<b>Balance brought forward</b>" : badge(KIND[t.kind])), nosort: 1 },
-    { h: "Reference", t: (t) => issueNo(t.issueId), html: (t) => `<span class="mono">${esc(issueNo(t.issueId))}</span>`, nosort: 1 },
-    { h: "From / to", t: party, cls: "nw", nosort: 1 },
-    { h: "Qty in", t: (t) => (t.kind !== "bf" && t.dir > 0 ? t.qty : ""), num: 1, html: (t) => (t.kind !== "bf" && t.dir > 0 ? `<span class="qin">${nf(t.qty)}</span>` : ""), nosort: 1 },
-    { h: "Qty out", t: (t) => (t.dir < 0 ? t.qty : ""), num: 1, html: (t) => (t.dir < 0 ? `<span class="qout">${nf(t.qty)}</span>` : ""), nosort: 1 },
-    { h: "Balance", t: (t) => t.bal, num: 1, cls: "strong", html: (t) => `<b>${nf(t.bal)}</b>`, nosort: 1 },
-    { h: "By", t: (t) => (t.kind === "bf" ? "" : uName(t.createdBy)), cls: "dim nw", nosort: 1 },
-    { h: "Notes", t: (t) => t.notes || "", cls: "wrap", nosort: 1 },
+    { h: "Date", t: (t) => t.at, html: (t) => fmtD(t.at), cls: "nw" },
+    { h: "Hostel", t: (t) => (t.kind === "bf" ? "" : hName(t.hostelId)), cls: "nw" },
+    { h: "Entry", t: (t) => (t.kind === "bf" ? "Balance brought forward" : KIND[t.kind].l), html: (t) => (t.kind === "bf" ? "<b>Balance brought forward</b>" : badge(KIND[t.kind])) },
+    { h: "Reference", t: (t) => issueNo(t.issueId), html: (t) => `<span class="mono">${esc(issueNo(t.issueId))}</span>` },
+    { h: "From / to", t: party, cls: "nw" },
+    { h: "Qty in", t: (t) => (t.kind !== "bf" && t.dir > 0 ? t.qty : ""), num: 1, html: (t) => (t.kind !== "bf" && t.dir > 0 ? `<span class="qin">${nf(t.qty)}</span>` : "") },
+    { h: "Qty out", t: (t) => (t.dir < 0 ? t.qty : ""), num: 1, html: (t) => (t.dir < 0 ? `<span class="qout">${nf(t.qty)}</span>` : "") },
+    { h: "Balance", t: (t) => t.bal, num: 1, cls: "strong", html: (t) => `<b>${nf(t.bal)}</b>` },
+    { h: "By", t: (t) => (t.kind === "bf" ? "" : uName(t.createdBy)), cls: "dim nw" },
+    { h: "Notes", t: (t) => t.notes || "", cls: "wrap" },
   ];
   const it = M.I.get(item) || {};
   return head("Item ledger", "Every entry for one item, from opening stock to today", csvBtn("ledger"))
@@ -964,6 +970,7 @@ const ACT = {
   issue: (el) => issueForm(el.dataset.kind || "transfer"),
   stockin: () => stockForm(),
   csv: (el) => downloadCSV(el.dataset.key),
+  sortdir: (el) => { const st = S.sort[el.dataset.key]; if (st) st.dir = -st.dir; render(); },
   page: (el) => { S.page[el.dataset.key] = +el.dataset.p; render(); window.scrollTo({ top: 0, behavior: "smooth" }); },
   clearf: (el) => { S.f[el.dataset.key] = {}; S.page[el.dataset.key] = 0; render(); },
   ledger: (el) => { S.ledger = { h: el.dataset.h || "", i: el.dataset.i }; S.f.ledger = {}; go("ledger"); },
@@ -1063,7 +1070,7 @@ document.addEventListener("click", (e) => {
   const a = e.target.closest("[data-act]");
   if (a) { e.preventDefault(); const fn = ACT[a.dataset.act]; if (fn) fn(a); return; }
   const th = e.target.closest("th[data-sort]");
-  if (th) { const k = th.dataset.sort, i = +th.dataset.i; const s = S.sort[k]; S.sort[k] = { i, dir: s && s.i === i ? -s.dir : 1 }; render(); return; }
+  if (th) { const k = th.dataset.sort, i = +th.dataset.i; const s = S.sort[k]; S.sort[k] = !s || s.i !== i ? { i, dir: 1 } : s.dir > 0 ? { i, dir: -1 } : null; S.page[k] = 0; render(); return; }
   const g = e.target.closest("[data-go]");
   if (g) { go(g.dataset.go); return; }
   if (e.target.id === "scrim") document.body.classList.remove("drawer");
@@ -1080,6 +1087,7 @@ document.addEventListener("input", (e) => {
 document.addEventListener("change", (e) => {
   const el = e.target;
   if (el.dataset.led) { S.ledger[el.dataset.led] = el.value; render(); }
+  else if (el.dataset.sortsel) { const k = el.dataset.sortsel; S.sort[k] = el.value === "" ? null : { i: +el.value, dir: (S.sort[k] && S.sort[k].dir) || 1 }; S.page[k] = 0; render(); }
   else if (el.dataset.f && (el.tagName === "SELECT" || el.type === "date")) { fv(el.dataset.fkey)[el.dataset.f] = el.value; S.page[el.dataset.fkey] = 0; render(); }
 });
 document.addEventListener("submit", async (e) => {
