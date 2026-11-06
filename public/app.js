@@ -200,7 +200,8 @@ function downloadCSV(key) {
 }
 
 /* ---------- page pieces ---------- */
-const head = (title, sub, acts = "") => `<div class="ph"><div><h1>${esc(title)}</h1>${sub ? `<p>${sub}</p>` : ""}</div><div class="acts">${acts}</div></div>`;
+// Page title with its buttons. Pages carry no tagline under the title.
+const head = (title, _sub, acts = "") => `<div class="ph"><div><h1>${esc(title)}</h1></div><div class="acts">${acts}</div></div>`;
 const csvBtn = (key) => `<button class="btn" data-act="csv" data-key="${key}">${ic("download")}<span class="l">Download CSV</span></button>`;
 const stats = (list) => `<div class="stats">${list.map((s) => `<div class="stat t-${s.tone || "brand"}${s.go ? " click" : ""}" ${s.go ? `data-go="${s.go}"` : ""}><div class="l">${esc(s.l)}</div><div class="v">${esc(s.v)}</div></div>`).join("")}</div>`;
 const scopeText = () => (M.admin ? `All ${S.d.hostels.length} hostels` : hName(M.myH));
