@@ -111,7 +111,6 @@ th.sorted{color:var(--brand-d)}th.sorted .ar{opacity:1;color:var(--brand)}
 td{padding:9px 8px;border-bottom:1px solid var(--line2);vertical-align:top;white-space:normal;overflow-wrap:break-word;word-break:normal;line-height:1.4}
 td.num,td .mono{white-space:nowrap}
 td .b{white-space:normal;line-height:1.3;display:inline-flex;align-items:baseline}
-td .b::before{flex:none;transform:translateY(-1px)}
 td .rowacts{flex-wrap:wrap;gap:5px}
 td .rowacts .btn.sm{padding:5px 9px;white-space:normal;text-align:center;line-height:1.25}
 /* cell borders on every table */
@@ -137,8 +136,7 @@ tfoot td{background:#f8f9fc;font-weight:700;border-top:1px solid var(--line)}
 .rowacts{display:flex;gap:6px;justify-content:flex-end;align-items:center}
 
 /* ---------- badges ---------- */
-.b{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:99px;font-size:12px;font-weight:600;white-space:nowrap;background:var(--slate-s);color:var(--ink2)}
-.b::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.8}
+.b{display:inline-flex;align-items:center;padding:3px 9px;border-radius:99px;font-size:12px;font-weight:600;white-space:nowrap;background:var(--slate-s);color:var(--ink2)}
 .b.green{background:var(--green-s);color:var(--green)}.b.amber{background:var(--amber-s);color:var(--amber)}.b.red{background:var(--red-s);color:var(--red)}
 .b.violet{background:var(--violet-s);color:var(--violet)}.b.blue{background:var(--brand-s);color:var(--brand-d)}.b.cyan{background:var(--cyan-s);color:var(--cyan)}
 .qin{color:var(--green);font-weight:600}.qout{color:var(--red);font-weight:600}

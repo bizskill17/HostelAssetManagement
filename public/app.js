@@ -421,7 +421,7 @@ V.stock = () => {
     { h: "Hostel", t: (t) => hName(t.hostelId), cls: "nw" },
     { h: "Item", t: (t) => iName(t.itemId), html: (t) => `<span class="lnk" data-act="ledger" data-h="${t.hostelId}" data-i="${t.itemId}">${esc(iName(t.itemId))}</span>` },
     { h: "Type", t: (t) => KIND[t.kind].l, html: (t) => badge(KIND[t.kind]) },
-    { h: "Qty", t: (t) => t.qty, num: 1, html: (t) => `<span class="qin">+${nf(t.qty)}</span>` },
+    { h: "Qty", t: (t) => t.qty, num: 1, html: (t) => `<span class="qin">${nf(t.qty)}</span>` },
     { h: "Unit", t: (t) => iUnit(t.itemId), cls: "dim" },
     { h: "Received from", t: (t) => t.party || "", cls: "nw" },
     { h: "Notes", t: (t) => t.notes || "", cls: "wrap" },
