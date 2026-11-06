@@ -669,6 +669,13 @@ V.warranties = () => {
 };
 
 /* ---------- masters (Admin) ---------- */
+const ADD_CATEGORY = { title: "Add category", label: "Category name", ph: "e.g. Furniture", coll: "categories" };
+const ADD_UNIT = { title: "Add unit", label: "Unit", ph: "e.g. Nos, Sets, Kg", coll: "units", value: (r, name) => name };
+function unitOpts(current) {
+  const names = (S.d.units || []).map((u) => u.name);
+  if (current && !names.includes(current)) names.push(current);
+  return names.sort(cmp).map((n) => [n, n]);
+}
 const MASTERS = {
   hostels: {
     title: "Hostels", one: "hostel", sub: "Each hostel keeps its own stock", icon: "building",
@@ -695,13 +702,22 @@ const MASTERS = {
       { h: "Notes", t: (r) => r.notes, cls: "wrap" },
       { h: "Status", t: (r) => (r.active ? "Active" : "Inactive"), html: (r) => (r.active ? `<span class="b green">Active</span>` : `<span class="b">Inactive</span>`) },
     ],
-    fields: [{ k: "name", l: "Item name", req: 1, ph: "e.g. Single bed, steel" }, { k: "categoryId", l: "Category", type: "select", half: 1, opts: () => catOpts(), blank: "— None —" }, { k: "unit", l: "Unit", half: 1, val: "Nos", list: ["Nos", "Pcs", "Sets", "Pairs", "Kg", "Litres", "Metres", "Boxes"] }, { k: "notes", l: "Notes" }, { k: "active", l: "Active (shown in forms)", type: "check", val: true }],
+    fields: [{ k: "name", l: "Item name", req: 1, ph: "e.g. Single bed, steel" },
+      { k: "categoryId", l: "Category", type: "select", half: 1, opts: () => catOpts(), blank: "— None —", add: ADD_CATEGORY },
+      { k: "unit", l: "Unit", type: "select", half: 1, val: "Nos", opts: (v) => unitOpts(v.unit), add: ADD_UNIT },
+      { k: "notes", l: "Notes" }, { k: "active", l: "Active (shown in forms)", type: "check", val: true }],
   },
   categories: {
     title: "Categories", one: "category", sub: "Groups for items and warranties", icon: "folder",
     rows: () => S.d.categories, search: (r) => [r.name],
     cols: [{ h: "Category", t: (r) => r.name, cls: "strong" }, { h: "Items", t: (r) => S.d.items.filter((i) => i.categoryId === r.id).length, num: 1 }],
     fields: [{ k: "name", l: "Category name", req: 1 }],
+  },
+  units: {
+    title: "Units", one: "unit", sub: "Units items are counted in", icon: "box", coll: "units",
+    rows: () => S.d.units || [], search: (r) => [r.name],
+    cols: [{ h: "Unit", t: (r) => r.name, cls: "strong" }, { h: "Items", t: (r) => S.d.items.filter((i) => i.unit === r.name).length, num: 1 }],
+    fields: [{ k: "name", l: "Unit", req: 1, ph: "e.g. Nos, Sets, Kg" }],
   },
   places: {
     title: "Damage destinations", one: "destination", sub: "Where damaged items are sent (optional when marking damage)", icon: "trash", coll: "damagePlaces",
@@ -746,7 +762,7 @@ function masterView(key) {
   return head(m.title, m.sub, `${csvBtn(key)}<button class="btn pri" data-act="mEdit" data-m="${key}">${ic("plus")}<span class="l">Add ${m.one}</span></button>`)
     + stats(st) + filterBar(key, fdefs) + table(key, cols, rows, { csv: key, emptyIcon: m.icon, empty: `No ${m.title.toLowerCase()} yet.` });
 }
-["hostels", "items", "categories", "places", "users"].forEach((k) => (V[k] = () => masterView(k)));
+["hostels", "items", "categories", "units", "places", "users"].forEach((k) => (V[k] = () => masterView(k)));
 
 /* ---------- settings ---------- */
 V.settings = () => {
@@ -796,7 +812,10 @@ function openForm(o) {
       const helpH = `<div class="help" data-help="${fd.k}"></div>`;
       let ctl;
       if (fd.type === "info") return `<div class="summary">${fd.html(vals)}</div>`;
-      if (fd.type === "select") ctl = `<select id="f_${fd.k}" name="${fd.k}">${fd.blank !== undefined ? `<option value="">${esc(fd.blank)}</option>` : ""}${fd.opts(vals).map(([ov, ol]) => `<option value="${esc(ov)}"${String(ov) === String(v) ? " selected" : ""}>${esc(ol)}</option>`).join("")}</select>`;
+      if (fd.type === "select") {
+        ctl = `<select id="f_${fd.k}" name="${fd.k}">${fd.blank !== undefined ? `<option value="">${esc(fd.blank)}</option>` : ""}${fd.opts(vals).map(([ov, ol]) => `<option value="${esc(ov)}"${String(ov) === String(v) ? " selected" : ""}>${esc(ol)}</option>`).join("")}</select>`;
+        if (fd.add && M.admin) ctl = `<div class="inrow">${ctl}<button type="button" class="btn addbtn" data-addfor="${fd.k}" title="${esc(fd.add.title)}" aria-label="${esc(fd.add.title)}">${ic("plus")}</button></div>`;
+      }
       else if (fd.type === "textarea") ctl = `<textarea id="f_${fd.k}" name="${fd.k}" placeholder="${esc(fd.ph || "")}">${esc(v)}</textarea>`;
       else if (fd.type === "check") return `<div class="fld"><label class="chk"><input type="checkbox" name="${fd.k}" ${v ? "checked" : ""}> ${esc(fd.l)}</label>${helpH}</div>`;
       else if (fd.type === "seg") ctl = `<input type="hidden" name="${fd.k}" value="${esc(v)}"><div class="seg">${fd.opts(vals).map(([ov, ol, icn]) => `<button type="button" data-seg="${fd.k}" data-v="${esc(ov)}" class="${String(ov) === String(v) ? "on" : ""}">${icn ? ic(icn) : ""}${esc(ol)}</button>`).join("")}</div>`;
@@ -832,6 +851,22 @@ function openForm(o) {
   form.addEventListener("change", (e) => { if (rebuilds(e.target)) onField(e); else { read(); refresh(); } });
   form.addEventListener("input", (e) => { if (!rebuilds(e.target)) onField(e); });
   form.addEventListener("click", (e) => {
+    const ab = e.target.closest("[data-addfor]");
+    if (ab) {
+      const fd = o.fields.find((x) => x.k === ab.dataset.addfor);
+      read();
+      promptBox({
+        title: fd.add.title, label: fd.add.label, ph: fd.add.ph,
+        onSave: async (name) => {
+          const r = await api("master.save", { coll: fd.add.coll, data: { name } });
+          await reload();
+          vals[fd.k] = String(fd.add.value ? fd.add.value(r, name) : r.id);
+          draw();
+          toast(`${name} added`);
+        },
+      });
+      return;
+    }
     const sb = e.target.closest("[data-seg]");
     if (sb) { read(); vals[sb.dataset.seg] = sb.dataset.v; if (o.onChange) o.onChange(vals, sb.dataset.seg); draw(); return; }
     if (e.target.closest("[data-close]")) closeDlg();
@@ -855,6 +890,27 @@ function openForm(o) {
     finally { btn.disabled = false; }
   });
   setTimeout(() => { const first = form.querySelector(".db input:not([type=hidden]):not([type=checkbox]), .db select, .db textarea"); if (first && window.innerWidth > 900) first.focus(); }, 40);
+}
+function promptBox(o) {
+  const w = document.createElement("div");
+  w.className = "dlg mini";
+  w.innerHTML = `<form novalidate class="box"><div class="dh"><div><h2>${esc(o.title)}</h2></div><button type="button" class="iconbtn" data-x aria-label="Close">${ic("x")}</button></div>
+    <div class="db"><div class="fld"><label>${esc(o.label)} <span class="req">*</span></label><input name="v" placeholder="${esc(o.ph || "")}" autocomplete="off"></div><div class="err"></div></div>
+    <div class="df"><button type="button" class="btn" data-x>Cancel</button><button type="submit" class="btn pri">Add</button></div></form>`;
+  document.body.appendChild(w);
+  const f = $("form", w), err = $(".err", f);
+  const close = () => w.remove();
+  w.addEventListener("click", (e) => { if (e.target.closest("[data-x]")) close(); });
+  w.addEventListener("mousedown", (e) => { if (e.target === w) close(); });
+  f.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const v = f.v.value.trim();
+    if (!v) { err.textContent = `Enter ${o.label.toLowerCase()}.`; return; }
+    const btn = $('button[type="submit"]', f);
+    btn.disabled = true; err.textContent = "";
+    try { await o.onSave(v); close(); } catch (ex) { err.textContent = ex.message || "Couldn't add. Try again."; btn.disabled = false; }
+  });
+  setTimeout(() => f.v.focus(), 30);
 }
 function closeDlg() { document.querySelectorAll(".dlg").forEach((d) => d.remove()); }
 function confirmBox(title, text, ok = "Confirm", danger = false) {
@@ -981,7 +1037,7 @@ function warrantyForm(id) {
     values: w ? { ...w, hostelId: w.hostelId ? String(w.hostelId) : "", categoryId: w.categoryId ? String(w.categoryId) : "", itemId: w.itemId ? String(w.itemId) : "", qty: w.qty ?? "", startAt: w.startAt || "" } : null,
     fields: [
       { k: "itemId", l: "Item", type: "select", blank: "— Choose item (optional) —", opts: () => groupedItems(S.d.items), half: 1 },
-      { k: "categoryId", l: "Category", type: "select", blank: "— Choose —", opts: () => catOpts(), half: 1 },
+      { k: "categoryId", l: "Category", type: "select", blank: "— Choose —", opts: () => catOpts(), half: 1, add: ADD_CATEGORY },
       { k: "title", l: "What it covers", ph: "e.g. Ceiling fans — Crompton", help: "Leave blank to use the item name." },
       { k: "hostelId", l: "Hostel", type: "select", blank: "All hostels", opts: () => S.d.hostels.map((h) => [h.id, h.name]), show: () => M.admin, half: 1, val: "" },
       { k: "qty", l: "Quantity covered", type: "number", half: 1 },
@@ -1068,7 +1124,7 @@ const NAV = [
   { g: "Movements" }, { v: "stock", l: "Stock in", i: "in" }, { v: "issues", l: "Issue register", i: "send" },
   { v: "approvals", l: "Approvals", i: "check", n: () => M.incoming.length, hot: 1 }, { v: "repairs", l: "Repairs", i: "wrench", n: () => M.openRepairs.length }, { v: "damaged", l: "Damaged", i: "alert" },
   { g: "Records" }, { v: "warranties", l: "Warranties", i: "shield", n: () => M.exp30, hot: 1 },
-  { g: "Masters", admin: 1 }, { v: "hostels", l: "Hostels", i: "building", admin: 1 }, { v: "items", l: "Items", i: "tag", admin: 1 }, { v: "categories", l: "Categories", i: "folder", admin: 1 },
+  { g: "Masters", admin: 1 }, { v: "hostels", l: "Hostels", i: "building", admin: 1 }, { v: "items", l: "Items", i: "tag", admin: 1 }, { v: "categories", l: "Categories", i: "folder", admin: 1 }, { v: "units", l: "Units", i: "box", admin: 1 },
   { v: "places", l: "Damage destinations", i: "trash", admin: 1 }, { v: "users", l: "Users", i: "users", admin: 1 }, { v: "settings", l: "Settings", i: "settings", admin: 1 },
 ];
 function renderShell() {
@@ -1151,7 +1207,7 @@ document.addEventListener("keydown", (e) => {
   if (t.tagName === "TEXTAREA" || t.tagName === "BUTTON") return;
   e.preventDefault();
 }, true);
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") { S.hist = null; closeDlg(); document.body.classList.remove("drawer"); } });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && document.querySelector(".dlg.mini")) { document.querySelector(".dlg.mini").remove(); return; } if (e.key === "Escape") { S.hist = null; closeDlg(); document.body.classList.remove("drawer"); } });
 $("#menuBtn").addEventListener("click", () => document.body.classList.toggle("drawer"));
 window.addEventListener("hashchange", route);
 

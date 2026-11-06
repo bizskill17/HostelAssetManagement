@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 function ensureSchema(PDO $db): void
 {
@@ -38,6 +38,10 @@ function ensureSchema(PDO $db): void
             notes VARCHAR(255) NOT NULL DEFAULT '', active TINYINT(1) NOT NULL DEFAULT 1,
             sample TINYINT(1) NOT NULL DEFAULT 0,
             UNIQUE KEY uq_item_name (name)
+        ) $E",
+        "CREATE TABLE IF NOT EXISTS ha_units (
+            id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(20) NOT NULL,
+            UNIQUE KEY uq_unit_name (name)
         ) $E",
         "CREATE TABLE IF NOT EXISTS ha_damage_places (
             id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(80) NOT NULL,
@@ -99,6 +103,7 @@ function ensureSchema(PDO $db): void
     $defaults = [
         'ha_categories' => ['Furniture', 'Bedding', 'Electrical', 'Electronics', 'Kitchen & Mess', 'Sports', 'Cleaning', 'Other'],
         'ha_damage_places' => ['Scrap dealer', 'Returned to supplier', 'Disposed', 'Kept in store'],
+        'ha_units' => ['Nos', 'Pcs', 'Sets', 'Pairs', 'Kg', 'Litres', 'Metres', 'Boxes'],
     ];
     foreach ($defaults as $t => $names) {
         if ((int) $db->query("SELECT COUNT(*) FROM $t")->fetchColumn() === 0) {
@@ -108,5 +113,8 @@ function ensureSchema(PDO $db): void
             }
         }
     }
+    // v3: every unit already used by an item is in the units list.
+    $db->exec("INSERT IGNORE INTO ha_units (name) SELECT DISTINCT unit FROM ha_items WHERE unit <> ''");
+
     $db->prepare("REPLACE INTO ha_meta (k, v) VALUES ('schema', ?)")->execute([(string) SCHEMA_VERSION]);
 }

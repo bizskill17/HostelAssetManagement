@@ -268,6 +268,7 @@ try {
             $res['hostels'] = array_map(fn($r) => ['id' => (int) $r['id'], 'name' => $r['name'], 'code' => $r['code'], 'address' => $r['address'], 'phone' => $r['phone'], 'active' => (bool) $r['active']],
                 db()->query("SELECT * FROM ha_hostels ORDER BY name")->fetchAll());
             $res['categories'] = array_map(fn($r) => ['id' => (int) $r['id'], 'name' => $r['name']], db()->query("SELECT * FROM ha_categories ORDER BY name")->fetchAll());
+            $res['units'] = array_map(fn($r) => ['id' => (int) $r['id'], 'name' => $r['name']], db()->query("SELECT * FROM ha_units ORDER BY name")->fetchAll());
             $res['damagePlaces'] = array_map(fn($r) => ['id' => (int) $r['id'], 'name' => $r['name']], db()->query("SELECT * FROM ha_damage_places ORDER BY name")->fetchAll());
             $res['items'] = array_map(fn($r) => ['id' => (int) $r['id'], 'name' => $r['name'], 'categoryId' => $r['category_id'] === null ? null : (int) $r['category_id'], 'unit' => $r['unit'], 'notes' => $r['notes'], 'active' => (bool) $r['active']],
                 db()->query("SELECT * FROM ha_items ORDER BY name")->fetchAll());
@@ -332,8 +333,29 @@ try {
                         fail('Enter the item name.');
                     }
                     $vals = [$name, idOrNull($d['categoryId'] ?? null), str($d['unit'] ?? '', 20) ?: 'Nos', str($d['notes'] ?? ''), empty($d['active']) ? 0 : 1];
-                    $id ? q("UPDATE ha_items SET name=?, category_id=?, unit=?, notes=?, active=? WHERE id=?", [...$vals, $id])
-                        : q("INSERT INTO ha_items (name, category_id, unit, notes, active) VALUES (?, ?, ?, ?, ?)", $vals);
+                    if ($id) {
+                        q("UPDATE ha_items SET name=?, category_id=?, unit=?, notes=?, active=? WHERE id=?", [...$vals, $id]);
+                    } else {
+                        q("INSERT INTO ha_items (name, category_id, unit, notes, active) VALUES (?, ?, ?, ?, ?)", $vals);
+                        $id = (int) db()->lastInsertId();
+                    }
+                    q("INSERT IGNORE INTO ha_units (name) VALUES (?)", [$vals[2]]);
+                    break;
+                case 'units':
+                    $name = str($d['name'] ?? '', 20);
+                    if ($name === '') {
+                        fail('Enter the unit, e.g. Nos or Sets.');
+                    }
+                    if ($id) {
+                        // Renaming a unit renames it on every item that uses it.
+                        $old = q("SELECT name FROM ha_units WHERE id=?", [$id])->fetchColumn();
+                        q("UPDATE ha_units SET name=? WHERE id=?", [$name, $id]);
+                        if ($old !== false) {
+                            q("UPDATE ha_items SET unit=? WHERE unit=?", [$name, $old]);
+                        }
+                    } else {
+                        q("INSERT INTO ha_units (name) VALUES (?)", [$name]);
+                    }
                     break;
                 case 'categories':
                 case 'damagePlaces':
@@ -380,7 +402,7 @@ try {
                 default:
                     fail('Unknown master.');
             }
-            out(['ok' => true]);
+            out(['ok' => true, 'id' => $id ?: (int) db()->lastInsertId()]);
         }
 
         case 'master.delete': {
@@ -415,6 +437,12 @@ try {
                     break;
                 case 'damagePlaces':
                     q("DELETE FROM ha_damage_places WHERE id=?", [$id]);
+                    break;
+                case 'units':
+                    if ($used("SELECT 1 FROM ha_items i JOIN ha_units u ON u.name = i.unit WHERE u.id=? LIMIT 1")) {
+                        fail('Some items use this unit. Change them first.');
+                    }
+                    q("DELETE FROM ha_units WHERE id=?", [$id]);
                     break;
                 case 'users':
                     if ($id === $u['id']) {
