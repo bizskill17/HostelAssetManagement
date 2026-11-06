@@ -82,6 +82,14 @@ svg.i{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-widt
 .stat.click{cursor:pointer}.stat.click:hover{border-color:#cfd5e3}
 .t-green{--tone:var(--green)}.t-amber{--tone:#e08a0b}.t-red{--tone:var(--red)}.t-violet{--tone:var(--violet)}.t-cyan{--tone:var(--cyan)}.t-slate{--tone:#8a93ab}
 
+/* ---------- segmented tabs (Approvals) ---------- */
+.segtabs{display:inline-flex;flex-wrap:wrap;gap:4px;background:var(--line2);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:12px;max-width:100%}
+.segtabs button{border:1px solid transparent;background:transparent;border-radius:9px;padding:8px 14px;font-weight:600;font-size:13.5px;color:var(--muted);display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+.segtabs button:hover{color:var(--ink)}
+.segtabs button svg.i{width:16px;height:16px}
+.segtabs button.on{background:#fff;color:var(--ink);border-color:var(--line);box-shadow:0 1px 3px rgba(20,26,46,.08)}
+.segtabs .n{font-size:12px;font-weight:600;padding:1px 8px;border-radius:99px;background:#fff;color:var(--muted)}
+.segtabs .on .n{background:var(--brand-s);color:var(--brand-d)}
 /* ---------- filters ---------- */
 .filters{display:flex;gap:9px;flex-wrap:wrap;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px;margin-bottom:12px;box-shadow:var(--sh)}
 .search{position:relative;flex:1 1 220px;min-width:180px}
@@ -247,6 +255,7 @@ tfoot td{background:#f8f9fc;font-weight:700;border-top:1px solid var(--line)}
   .dlg .df{flex-wrap:wrap;gap:6px;padding:10px 12px 14px}.dlg .df .btn{flex:1 1 auto;justify-content:center;padding:9px 10px}
   .hbody{padding:10px 12px 4px}.hbody .stats{grid-template-columns:repeat(2,1fr)}
   .hero{padding:18px}
+  .segtabs{display:flex}.segtabs button{flex:1 1 100%;justify-content:space-between}
   .toast{bottom:92px}
 }
 

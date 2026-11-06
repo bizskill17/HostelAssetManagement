@@ -36,6 +36,7 @@ const P = {
   logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
   x: '<path d="M18 6 6 18M6 6l12 12"/>',
   menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+  list: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/>',
   move: '<path d="M17 3l4 4-4 4"/><path d="M3 7h18"/><path d="M7 21l-4-4 4-4"/><path d="M21 17H3"/>',
   undo: '<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>',
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
@@ -240,8 +241,8 @@ V.home = () => {
     + stats([
       { v: nf(total), l: "Items in stock", go: "inventory" },
       { v: nf(new Set(rows.filter((r) => r.current > 0).map((r) => r.itemId)).size), l: "Item types in stock", tone: "cyan", go: "inventory" },
-      { v: nf(M.incoming.length), l: "Waiting to be received", tone: M.incoming.length ? "amber" : "slate", go: "approvals" },
-      { v: nf(M.outgoing.length), l: "Transfers sent, not yet received", tone: "violet", go: "approvals" },
+      { v: nf(M.incoming.length), l: "Waiting to be received", tone: M.incoming.length ? "amber" : "slate", go: "approvals?in" },
+      { v: nf(M.outgoing.length), l: "Transfers sent, not yet received", tone: "violet", go: "approvals?out" },
       { v: nf(atRep), l: overdue ? `At repair · ${overdue} overdue` : "At repair", tone: overdue ? "red" : "amber", go: "repairs" },
       { v: nf(dmgMonth), l: "Damaged this month", tone: "red", go: "damaged" },
       { v: nf(M.exp30), l: "Warranties expiring in 30 days", tone: M.exp30 ? "red" : "green", go: "warranties" },
@@ -507,7 +508,8 @@ V.issues = () => {
 /* ---------- approvals ---------- */
 V.approvals = () => {
   const f = fv("approvals");
-  const show = f.show || (f.st && f.st !== "pending" ? "all" : "in");
+  // A finished status (received, not received…) only exists among all transfers.
+  const show = f.st && f.st !== "pending" ? "all" : f.show || "in";
   const all = S.d.issues.filter((i) => i.kind === "transfer");
   let rows = show === "in" ? M.incoming : show === "out" ? M.outgoing : all;
   rows = rows.filter((i) => (!f.st || i.status === f.st || (f.st === "received" && i.status === "approved")) && (!f.h || i.hostelId === +f.h || i.toHostelId === +f.h) && inRange(i.at, f) && match(f.q, i.no, iName(i.itemId), hName(i.hostelId), hName(i.toHostelId), i.notes, i.decisionNote));
@@ -530,7 +532,9 @@ V.approvals = () => {
     { h: "Notes", t: (i) => [i.notes, i.decisionNote && "Receiver: " + i.decisionNote].filter(Boolean).join(" · "), cls: "wrap" },
     { h: "", t: () => "", nocsv: 1, nosort: 1, html: issueActs },
   ];
-  return head("Approvals", "Transfers between hostels. The receiving hostel updates how many arrived; only that quantity moves.", csvBtn("approvals"))
+  const tab = (v, label, icon, n) => `<button type="button" class="${show === v ? "on" : ""}" data-act="apptab" data-v="${v}">${ic(icon)}${esc(label)}<span class="n">${nf(n)}</span></button>`;
+  const tabs = `<div class="segtabs" role="tablist">${tab("in", "Waiting for me to receive", "inbox", M.incoming.length)}${tab("out", "Sent, not yet received", "send", M.outgoing.length)}${tab("all", "All transfers", "list", all.length)}</div>`;
+  return head("Approvals", "", csvBtn("approvals")) + tabs
     + stats([
       { v: nf(M.incoming.length), l: "Waiting for me to receive", tone: M.incoming.length ? "amber" : "slate", go: "approvals?in" },
       { v: nf(M.outgoing.length), l: "Sent, awaiting the other hostel", tone: "violet", go: "approvals?out" },
@@ -541,7 +545,6 @@ V.approvals = () => {
     ])
     + filterBar("approvals", [
       { k: "q", type: "search", ph: "Search no., item or hostel" },
-      { k: "show", l: "Show", opts: [["out", "Sent by " + (M.admin ? "hostels" : "us") + ", not yet received"], ["all", "All transfers"]], all: "Waiting for me to receive" },
       { k: "st", l: "Status", opts: [["pending", "Awaiting receipt"], ["received", "Received"], ["short", "Received short"], ["rejected", "Not received"], ["cancelled", "Cancelled"]], all: "All statuses" },
       { k: "h", l: "Hostel", opts: S.d.hostels.map((h) => [h.id, h.name]), all: "All hostels", hide: !M.admin },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
@@ -1069,6 +1072,7 @@ const ACT = {
   issue: (el) => issueForm(el.dataset.kind || "transfer"),
   stockin: () => stockForm(),
   csv: (el) => downloadCSV(el.dataset.key),
+  apptab: (el) => { const f = fv("approvals"); f.show = el.dataset.v; if (el.dataset.v !== "all" && f.st && f.st !== "pending") f.st = ""; S.page.approvals = 0; render(); },
   sortdir: (el) => { const st = S.sort[el.dataset.key]; if (st) st.dir = -st.dir; if (el.dataset.key === "hist") drawHist(); else render(); },
   page: (el) => { S.page[el.dataset.key] = +el.dataset.p; render(); window.scrollTo({ top: 0, behavior: "smooth" }); },
   clearf: (el) => { S.f[el.dataset.key] = {}; S.page[el.dataset.key] = 0; render(); },
@@ -1158,7 +1162,7 @@ function route() {
   const [v, arg] = h.split("?");
   const nav = NAV.find((n) => n.v === v);
   S.view = nav && (!nav.admin || M.admin) ? v : "home";
-  if (arg && S.view === "approvals") S.f.approvals = { show: arg === "in" ? "" : arg };
+  if (arg && S.view === "approvals") S.f.approvals = { show: arg };
   if (arg && S.view === "repairs") S.f.repairs = { st: arg };
   if (arg && S.view === "warranties") S.f.warranties = { st: arg };
   if (arg) history.replaceState(null, "", "#" + S.view);
