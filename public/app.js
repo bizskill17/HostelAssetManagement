@@ -217,8 +217,6 @@ V.home = () => {
   const overdue = M.openRepairs.filter(isOverdue).length;
   const monthStart = today().slice(0, 8) + "01";
   const dmgMonth = S.d.txns.filter((t) => t.kind === "damaged" && t.at >= monthStart).reduce((s, t) => s + t.qty, 0);
-  const hour = new Date().getHours();
-  const greet = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const incoming = M.incoming.slice(0, 6);
   const recent = S.d.txns.filter((t) => t.kind !== "opening").slice().sort((a, b) => b.createdAt - a.createdAt || b.id - a.id).slice(0, 8);
   const repairs = M.openRepairs.slice().sort((a, b) => cmp(a.expectedAt || "9999", b.expectedAt || "9999")).slice(0, 5);
@@ -236,7 +234,7 @@ V.home = () => {
     : `<div class="empty">${ic("shield")}<div>No warranties expire in the next 90 days.</div></div>`;
   const hostelBars = M.admin ? `<div class="card"><div class="ch"><h3>Stock by hostel</h3><span class="sub">Current quantity</span></div><ul class="list">${byH.map((x) => `<li><div class="tx"><b class="lnk" data-act="invHostel" data-id="${x.h.id}">${esc(x.h.name)}</b><div style="height:8px;background:var(--line2);border-radius:99px;margin-top:7px;overflow:hidden"><div style="height:100%;width:${(x.n / maxH) * 100}%;background:linear-gradient(90deg,#5b7cfa,#2f54eb);border-radius:99px"></div></div></div><div class="rt strong" style="min-width:60px;font-weight:700">${nf(x.n)}</div></li>`).join("")}</ul></div>` : "";
 
-  return `<div class="hero"><div><h1>${greet}, ${esc(S.me.name.split(" ")[0])}</h1><p>${esc(scopeText())} · ${fmtD(today())}</p></div><div class="acts"><button class="btn pri" data-act="issue">${ic("send")}Issue asset</button><button class="btn" data-act="stockin">${ic("in")}Add stock</button></div></div>`
+  return head("Dashboard", `${esc(scopeText())} · ${fmtD(today())}`)
     + stats([
       { v: nf(total), l: "Items in stock", go: "inventory" },
       { v: nf(new Set(rows.filter((r) => r.current > 0).map((r) => r.itemId)).size), l: "Item types in stock", tone: "cyan", go: "inventory" },
