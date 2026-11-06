@@ -454,7 +454,7 @@ try {
         }
 
         case 'txn.delete': {
-            // Admin correction for a wrong opening / received entry. Issue-linked entries are undone by voiding the issue.
+            // Admin correction for a wrong opening / received entry. Issue-linked entries are removed by deleting the issue.
             $u = requireAdmin();
             $id = idOrNull(body()['id'] ?? null) ?? 0;
             $t = q("SELECT * FROM ha_txns WHERE id=?", [$id])->fetch();
@@ -462,7 +462,7 @@ try {
                 fail('That entry no longer exists.');
             }
             if (!in_array($t['kind'], ['opening', 'in'], true)) {
-                fail('This entry belongs to an issue. Void the issue instead.');
+                fail('This entry belongs to an issue. Delete the issue instead.');
             }
             db()->beginTransaction();
             lockHostel((int) $t['hostel_id']);
@@ -596,25 +596,24 @@ try {
             out(['ok' => true]);
         }
 
-        case 'issue.void': {
-            // Admin undo for an issue entered by mistake: removes its stock entries.
+        case 'issue.delete': {
+            // Admin removes an issue entered by mistake, together with all its stock entries.
             $u = requireAdmin();
             $i = issueRow(idOrNull(body()['id'] ?? null) ?? 0);
-            if (in_array($i['status'], ['void', 'rejected', 'cancelled'], true)) {
-                fail('This issue has no stock effect to undo.');
-            }
             db()->beginTransaction();
             lockHostel((int) $i['hostel_id']);
-            if ($i['kind'] === 'transfer' && in_array($i['status'], ['received', 'short'], true)) {
+            if ($i['kind'] === 'transfer' && in_array($i['status'], ['received', 'short', 'approved'], true)) {
+                // Deleting takes the items back off the receiving hostel, so they must still be there.
                 $recv = (int) $i['to_hostel_id'];
                 lockHostel($recv);
-                if (onHand($recv, (int) $i['item_id']) - pendingOut($recv, (int) $i['item_id']) < (int) $i['received_qty']) {
+                $got = (int) ($i['received_qty'] ?? $i['qty']);
+                if (onHand($recv, (int) $i['item_id']) - pendingOut($recv, (int) $i['item_id']) < $got) {
                     db()->rollBack();
-                    fail('The receiving hostel has already issued some of these items, so this transfer can\'t be voided.');
+                    fail('The receiving hostel has already issued some of these items, so this transfer can\'t be deleted.');
                 }
             }
             q("DELETE FROM ha_txns WHERE issue_id=?", [$i['id']]);
-            q("UPDATE ha_issues SET status='void', decided_by=?, decided_at=? WHERE id=?", [$u['id'], nowMs(), $i['id']]);
+            q("DELETE FROM ha_issues WHERE id=?", [$i['id']]);
             db()->commit();
             out(['ok' => true]);
         }

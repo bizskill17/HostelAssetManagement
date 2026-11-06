@@ -433,7 +433,7 @@ function issueActs(i) {
     if (canWriteHostel(i.hostelId)) b.push(`<button class="btn sm" data-act="cancel" data-id="${i.id}">Cancel</button>`);
   }
   if (i.kind === "repair" && outstanding(i) > 0 && (i.status === "at_repair" || i.status === "partly_returned") && canWriteHostel(i.hostelId)) b.push(`<button class="btn sm ok" data-act="return" data-id="${i.id}">Record return</button>`);
-  if (M.admin && !["void", "rejected", "cancelled"].includes(i.status)) b.push(`<button class="iconbtn" title="Void (undo) this issue" data-act="void" data-id="${i.id}">${ic("undo")}</button>`);
+  if (M.admin) b.push(`<button class="iconbtn del" title="Delete this issue" data-act="delissue" data-id="${i.id}">${ic("trash")}</button>`);
   return `<div class="rowacts">${b.join("")}</div>`;
 }
 V.issues = () => {
@@ -980,9 +980,11 @@ const ACT = {
     const i = S.d.issues.find((x) => x.id === +el.dataset.id);
     if (await confirmBox("Cancel this transfer?", `${esc(i.no)} to ${esc(hName(i.toHostelId))} will be withdrawn. No stock has moved yet.`, "Cancel transfer", true)) await run(() => api("issue.cancel", { id: i.id }), "Transfer cancelled");
   },
-  void: async (el) => {
+  delissue: async (el) => {
     const i = S.d.issues.find((x) => x.id === +el.dataset.id);
-    if (await confirmBox("Void this issue?", `${esc(i.no)} and all its stock entries will be undone. Use this only for entries made by mistake.`, "Void issue", true)) await run(() => api("issue.void", { id: i.id }), `${i.no} voided`);
+    const moved = i.kind === "transfer" ? (i.receivedQty ? `${esc(hName(i.toHostelId))} will go down by ${nf(i.receivedQty)} and ${esc(hName(i.hostelId))} back up by ${nf(i.receivedQty)}.` : "No stock has moved for it.")
+      : `All its stock entries are removed, so ${esc(hName(i.hostelId))}'s stock goes back to how it was before this was entered.`;
+    if (await confirmBox(`Delete ${i.no}?`, `<b>${esc(iName(i.itemId))} × ${nf(i.qty)}</b> (${esc(ISSUE_KIND[i.kind].l.toLowerCase())}). ${moved} This can't be undone.`, "Delete", true)) await run(() => api("issue.delete", { id: i.id }), `${i.no} deleted`);
   },
   return: (el) => returnForm(+el.dataset.id),
   deltxn: async (el) => { if (await confirmBox("Delete this stock entry?", "Use this to correct a wrong opening or received entry.", "Delete", true)) await run(() => api("txn.delete", { id: +el.dataset.id }), "Entry deleted"); },

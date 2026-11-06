@@ -32,7 +32,7 @@ Every list has counts on top, search and filters, and **Download CSV** (which do
 
 | Role | Can do |
 |---|---|
-| **Admin** | Sees every hostel. The only role that can change masters (hostels, items, categories, users) and settings. Can void an issue entered by mistake, or delete a wrong stock entry |
+| **Admin** | Sees every hostel. The only role that can change masters (hostels, items, categories, users) and settings. Can delete an issue or a stock entry made by mistake |
 | **Warden** | Linked to one hostel and sees only that hostel's data. Adds stock, issues items, approves transfers coming in, records repair returns, keeps warranties |
 
 ## Notifications
