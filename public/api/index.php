@@ -322,9 +322,9 @@ try {
                     if ($name === '') {
                         fail('Enter the hostel name.');
                     }
-                    $vals = [$name, strtoupper(str($d['code'] ?? '', 10)), str($d['address'] ?? ''), str($d['phone'] ?? '', 40), empty($d['active']) ? 0 : 1];
-                    $id ? q("UPDATE ha_hostels SET name=?, code=?, address=?, phone=?, active=? WHERE id=?", [...$vals, $id])
-                        : q("INSERT INTO ha_hostels (name, code, address, phone, active) VALUES (?, ?, ?, ?, ?)", $vals);
+                    $vals = [$name, str($d['address'] ?? ''), empty($d['active']) ? 0 : 1];
+                    $id ? q("UPDATE ha_hostels SET name=?, address=?, active=? WHERE id=?", [...$vals, $id])
+                        : q("INSERT INTO ha_hostels (name, address, active) VALUES (?, ?, ?)", $vals);
                     break;
                 case 'items':
                     $name = str($d['name'] ?? '', 120);

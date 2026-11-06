@@ -673,17 +673,15 @@ const MASTERS = {
   hostels: {
     title: "Hostels", one: "hostel", sub: "Each hostel keeps its own stock", icon: "building",
     rows: () => S.d.hostels,
-    search: (r) => [r.name, r.code, r.address, r.phone],
+    search: (r) => [r.name, r.address],
     cols: [
       { h: "Hostel", t: (r) => r.name, html: (r) => `<span class="lnk" data-act="invHostel" data-id="${r.id}">${esc(r.name)}</span>` },
-      { h: "Code", t: (r) => r.code, html: (r) => `<span class="mono">${esc(r.code)}</span>` },
       { h: "Address", t: (r) => r.address, cls: "wrap" },
-      { h: "Phone", t: (r) => r.phone, cls: "nw" },
       { h: "Wardens", t: (r) => S.d.users.filter((u) => u.hostelId === r.id && u.role === "Warden").map((u) => u.name).join(", "), cls: "wrap" },
       { h: "Items in stock", t: (r) => [...M.inv.values()].filter((x) => x.hostelId === r.id).reduce((s, x) => s + x.current, 0), num: 1 },
       { h: "Status", t: (r) => (r.active ? "Active" : "Inactive"), html: (r) => (r.active ? `<span class="b green">Active</span>` : `<span class="b">Inactive</span>`) },
     ],
-    fields: [{ k: "name", l: "Hostel name", req: 1 }, { k: "code", l: "Short code", half: 1, ph: "e.g. NBH" }, { k: "phone", l: "Phone", half: 1 }, { k: "address", l: "Address / location" }, { k: "active", l: "Active (can receive transfers)", type: "check", val: true }],
+    fields: [{ k: "name", l: "Hostel name", req: 1 }, { k: "address", l: "Address / location" }, { k: "active", l: "Active (can receive transfers)", type: "check", val: true }],
   },
   items: {
     title: "Items", one: "item", sub: "The asset types you count, with their unit and category", icon: "tag",
