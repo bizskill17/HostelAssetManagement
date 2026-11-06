@@ -423,7 +423,6 @@ V.stock = () => {
     { h: "Type", t: (t) => KIND[t.kind].l, html: (t) => badge(KIND[t.kind]) },
     { h: "Qty", t: (t) => t.qty, num: 1, html: (t) => `<span class="qin">${nf(t.qty)}</span>` },
     { h: "Unit", t: (t) => iUnit(t.itemId), cls: "dim" },
-    { h: "Received from", t: (t) => t.party || "", cls: "nw" },
     { h: "Notes", t: (t) => t.notes || "", cls: "wrap" },
     { h: "Entered by", t: (t) => uName(t.createdBy), cls: "dim nw" },
   ];
@@ -816,16 +815,17 @@ function openForm(o) {
         ctl = `<select id="f_${fd.k}" name="${fd.k}">${fd.blank !== undefined ? `<option value="">${esc(fd.blank)}</option>` : ""}${fd.opts(vals).map(([ov, ol]) => `<option value="${esc(ov)}"${String(ov) === String(v) ? " selected" : ""}>${esc(ol)}</option>`).join("")}</select>`;
         if (fd.add && M.admin) ctl = `<div class="inrow">${ctl}<button type="button" class="btn addbtn" data-addfor="${fd.k}" title="${esc(fd.add.title)}" aria-label="${esc(fd.add.title)}">${ic("plus")}</button></div>`;
       }
-      else if (fd.type === "textarea") ctl = `<textarea id="f_${fd.k}" name="${fd.k}" placeholder="${esc(fd.ph || "")}">${esc(v)}</textarea>`;
+      else if (fd.type === "textarea") ctl = `<textarea id="f_${fd.k}" name="${fd.k}" placeholder="${esc((typeof fd.ph === "function" ? fd.ph(vals) : fd.ph) || "")}">${esc(v)}</textarea>`;
       else if (fd.type === "check") return `<div class="fld"><label class="chk"><input type="checkbox" name="${fd.k}" ${v ? "checked" : ""}> ${esc(fd.l)}</label>${helpH}</div>`;
       else if (fd.type === "seg") ctl = `<input type="hidden" name="${fd.k}" value="${esc(v)}"><div class="seg">${fd.opts(vals).map(([ov, ol, icn]) => `<button type="button" data-seg="${fd.k}" data-v="${esc(ov)}" class="${String(ov) === String(v) ? "on" : ""}">${icn ? ic(icn) : ""}${esc(ol)}</button>`).join("")}</div>`;
-      else ctl = `<input id="f_${fd.k}" name="${fd.k}" type="${fd.type || "text"}" value="${esc(v)}" placeholder="${esc(fd.ph || "")}" ${fd.type === "number" ? 'min="0" step="1" inputmode="numeric"' : ""} ${fd.ro ? "readonly tabindex=\"-1\" style=\"background:var(--line2);font-weight:700\"" : ""} ${fd.list ? `list="l_${fd.k}"` : ""} autocomplete="${fd.type === "password" ? "new-password" : "off"}">${fd.list ? `<datalist id="l_${fd.k}">${fd.list.map((x) => `<option value="${esc(x)}">`).join("")}</datalist>` : ""}`;
+      else ctl = `<input id="f_${fd.k}" name="${fd.k}" type="${fd.type || "text"}" value="${esc(v)}" placeholder="${esc((typeof fd.ph === "function" ? fd.ph(vals) : fd.ph) || "")}" ${fd.type === "number" ? 'min="0" step="1" inputmode="numeric"' : ""} ${fd.ro ? "readonly tabindex=\"-1\" style=\"background:var(--line2);font-weight:700\"" : ""} ${fd.list ? `list="l_${fd.k}"` : ""} autocomplete="${fd.type === "password" ? "new-password" : "off"}">${fd.list ? `<datalist id="l_${fd.k}">${fd.list.map((x) => `<option value="${esc(x)}">`).join("")}</datalist>` : ""}`;
       return `<div class="fld${fd.half ? " half" : ""}">${lab}${ctl}${helpH}</div>`;
     }).join("") + `<div class="err"></div>`;
     refresh();
   };
   // Labels and hints change with the values; update them in place so typing is never interrupted.
-  function labText(fd) { return `${esc(typeof fd.l === "function" ? fd.l(vals) : fd.l)}${fd.req ? ' <span class="req">*</span>' : ""}`; }
+  const isReq = (fd) => (typeof fd.req === "function" ? fd.req(vals) : fd.req);
+  function labText(fd) { return `${esc(typeof fd.l === "function" ? fd.l(vals) : fd.l)}${isReq(fd) ? ' <span class="req">*</span>' : ""}`; }
   function refresh() {
     for (const fd of o.fields) {
       const h = body.querySelector(`[data-help="${fd.k}"]`);
@@ -877,7 +877,7 @@ function openForm(o) {
     read();
     const err = $(".err", form);
     for (const fd of o.fields) {
-      if (fd.req && (!fd.show || fd.show(vals)) && String(vals[fd.k] ?? "").trim() === "") { err.textContent = `Enter ${(typeof fd.l === "function" ? fd.l(vals) : fd.l).toLowerCase()}.`; return; }
+      if (isReq(fd) && (!fd.show || fd.show(vals)) && String(vals[fd.k] ?? "").trim() === "") { err.textContent = `Enter ${(typeof fd.l === "function" ? fd.l(vals) : fd.l).toLowerCase()}.`; return; }
     }
     const btn = $('button[type="submit"]', form);
     btn.disabled = true; err.textContent = "";
@@ -941,8 +941,7 @@ function stockForm() {
         help: (v) => (v.itemId ? (v.kind === "opening" && hasOpening(v.hostelId, v.itemId) ? { t: "Opening stock is already entered for this item at this hostel. Use Received instead.", c: "warn" } : { t: `In stock now: <b>${nf(available(+v.hostelId, +v.itemId) + ((M.inv.get(v.hostelId + "|" + v.itemId) || {}).pendingOut || 0))}</b> ${esc(iUnit(+v.itemId))}` }) : "") },
       { k: "qty", l: "Quantity", type: "number", req: 1, half: 1 },
       { k: "at", l: (v) => (v.kind === "opening" ? "As of date" : "Date received"), type: "date", val: today(), half: 1 },
-      { k: "party", l: "Received from (supplier)", ph: "Optional", show: (v) => v.kind === "in" },
-      { k: "notes", l: "Notes", type: "textarea", ph: "Bill number, remarks… (optional)" },
+      { k: "notes", l: "Notes", type: "textarea", req: (v) => v.kind === "in", ph: (v) => (v.kind === "in" ? "Where it came from, bill number…" : "Remarks (optional)") },
     ],
     submit: "Add stock",
     onSubmit: async (v) => { await api("stock.add", { ...v, hostelId: +v.hostelId }); return `Added ${nf(v.qty)} ${iUnit(+v.itemId)} of ${iName(+v.itemId)}`; },

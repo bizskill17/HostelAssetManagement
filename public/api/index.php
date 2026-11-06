@@ -473,6 +473,9 @@ try {
             if ($qty <= 0 || $qty > 1000000) {
                 fail('Enter a quantity greater than 0.');
             }
+            if ($kind === 'in' && str($b['notes'] ?? '') === '') {
+                fail('Enter notes for items received (where they came from, bill number…).');
+            }
             if ($kind === 'opening' && (int) q("SELECT COUNT(*) FROM ha_txns WHERE hostel_id=? AND item_id=? AND kind='opening'", [$hid, $iid])->fetchColumn() > 0) {
                 fail('Opening stock for this item is already entered for this hostel. Add new stock as "Received" instead.');
             }
