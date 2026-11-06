@@ -241,13 +241,13 @@ V.home = () => {
     + stats([
       { v: nf(total), l: "Items in stock", go: "inventory" },
       { v: nf(new Set(rows.filter((r) => r.current > 0).map((r) => r.itemId)).size), l: "Item types in stock", tone: "cyan", go: "inventory" },
-      { v: nf(M.incoming.length), l: "Waiting to be received", tone: M.incoming.length ? "amber" : "slate", go: "approvals?in" },
-      { v: nf(M.outgoing.length), l: "Transfers sent, not yet received", tone: "violet", go: "approvals?out" },
+      { v: nf(M.incoming.length), l: "Waiting to be received", tone: M.incoming.length ? "amber" : "slate", go: "receive" },
+      { v: nf(M.outgoing.length), l: "Transfers sent, not yet received", tone: "violet", go: "sent" },
       { v: nf(atRep), l: overdue ? `At repair · ${overdue} overdue` : "At repair", tone: overdue ? "red" : "amber", go: "repairs" },
       { v: nf(dmgMonth), l: "Damaged this month", tone: "red", go: "damaged" },
       { v: nf(M.exp30), l: "Warranties expiring in 30 days", tone: M.exp30 ? "red" : "green", go: "warranties" },
     ], true)
-    + `<div class="grid2"><div><div class="card"><div class="ch"><h3>Waiting to be received</h3><a href="#approvals" class="sub">See all</a></div>${apprList}</div><div class="card"><div class="ch"><h3>Recent movements</h3><a href="#issues" class="sub">Issue register</a></div>${recentList}</div></div>`
+    + `<div class="grid2"><div><div class="card"><div class="ch"><h3>Waiting to be received</h3><a href="#receive" class="sub">See all</a></div>${apprList}</div><div class="card"><div class="ch"><h3>Recent movements</h3><a href="#issues" class="sub">Issue register</a></div>${recentList}</div></div>`
     + `<div>${hostelBars}<div class="card"><div class="ch"><h3>At repair</h3><a href="#repairs" class="sub">Track repairs</a></div>${repList}</div><div class="card"><div class="ch"><h3>Warranties expiring soon</h3><a href="#warranties" class="sub">All warranties</a></div>${warList}</div></div></div>`;
 };
 function daysBadge(n) {
@@ -506,15 +506,18 @@ V.issues = () => {
 };
 
 /* ---------- approvals ---------- */
-V.approvals = () => {
-  const f = fv("approvals");
-  // A finished status (received, not received…) only exists among all transfers.
-  const show = f.st && f.st !== "pending" ? "all" : f.show || "in";
+/* Approvals: three pages in the left menu, one per view. */
+const APPROVAL_VIEWS = {
+  receive: { show: "in", title: "Waiting for me to receive", empty: "Nothing waiting to be received.", csv: "transfers-to-receive" },
+  sent: { show: "out", title: "Sent, not yet received", empty: "Nothing sent that's waiting to be received.", csv: "transfers-sent" },
+  transfers: { show: "all", title: "All transfers", empty: "No transfers yet.", csv: "transfers-all" },
+};
+function approvalsView(key) {
+  const A = APPROVAL_VIEWS[key];
+  const f = fv(key);
   const all = S.d.issues.filter((i) => i.kind === "transfer");
-  let rows = show === "in" ? M.incoming : show === "out" ? M.outgoing : all;
+  let rows = A.show === "in" ? M.incoming : A.show === "out" ? M.outgoing : all;
   rows = rows.filter((i) => (!f.st || i.status === f.st || (f.st === "received" && i.status === "approved")) && (!f.h || i.hostelId === +f.h || i.toHostelId === +f.h) && inRange(i.at, f) && match(f.q, i.no, iName(i.itemId), hName(i.hostelId), hName(i.toHostelId), i.notes, i.decisionNote));
-  const since = addDays(today(), -30);
-  const recent = all.filter((i) => i.decidedAt && isoOf(new Date(i.decidedAt)) >= since && i.receivedQty != null);
   const short = (i) => (i.receivedQty == null ? "" : i.qty - i.receivedQty);
   const cols = [
     { h: "No.", t: (i) => i.no, html: (i) => `<span class="mono">${esc(i.no)}</span>`, cls: "nw" },
@@ -532,25 +535,17 @@ V.approvals = () => {
     { h: "Notes", t: (i) => [i.notes, i.decisionNote && "Receiver: " + i.decisionNote].filter(Boolean).join(" · "), cls: "wrap" },
     { h: "", t: () => "", nocsv: 1, nosort: 1, html: issueActs },
   ];
-  const tab = (v, label, icon, n) => `<button type="button" class="${show === v ? "on" : ""}" data-act="apptab" data-v="${v}">${ic(icon)}${esc(label)}<span class="n">${nf(n)}</span></button>`;
-  const tabs = `<div class="segtabs" role="tablist">${tab("in", "Waiting for me to receive", "inbox", M.incoming.length)}${tab("out", "Sent, not yet received", "send", M.outgoing.length)}${tab("all", "All transfers", "list", all.length)}</div>`;
-  return head("Approvals", "", csvBtn("approvals")) + tabs
-    + stats([
-      { v: nf(M.incoming.length), l: "Waiting for me to receive", tone: M.incoming.length ? "amber" : "slate", go: "approvals?in" },
-      { v: nf(M.outgoing.length), l: "Sent, awaiting the other hostel", tone: "violet", go: "approvals?out" },
-      { v: nf(recent.filter((i) => i.status === "received" || i.status === "approved").length), l: "Received in full, last 30 days", tone: "green" },
-      { v: nf(recent.filter((i) => i.status === "short" || i.status === "rejected").length), l: "Short or not received, last 30 days", tone: "red" },
-      { v: nf(rows.reduce((s, i) => s + i.qty, 0)), l: "Send qty (shown)", tone: "cyan" },
-      { v: nf(rows.reduce((s, i) => s + (i.receivedQty || 0), 0)), l: "Received qty (shown)", tone: "green" },
-    ])
-    + filterBar("approvals", [
+  // Waiting/sent pages only hold transfers still awaiting receipt, so the status filter is only on All transfers.
+  return head(A.title, "", csvBtn(key))
+    + filterBar(key, [
       { k: "q", type: "search", ph: "Search no., item or hostel" },
-      { k: "st", l: "Status", opts: [["pending", "Awaiting receipt"], ["received", "Received"], ["short", "Received short"], ["rejected", "Not received"], ["cancelled", "Cancelled"]], all: "All statuses" },
+      { k: "st", l: "Status", opts: [["pending", "Awaiting receipt"], ["received", "Received"], ["short", "Received short"], ["rejected", "Not received"], ["cancelled", "Cancelled"]], all: "All statuses", hide: A.show !== "all" },
       { k: "h", l: "Hostel", opts: S.d.hostels.map((h) => [h.id, h.name]), all: "All hostels", hide: !M.admin },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
     ])
-    + table("approvals", cols, rows, { csv: "transfers", emptyIcon: "check", empty: show === "in" ? "Nothing waiting to be received." : "No transfers to show." });
-};
+    + table(key, cols, rows, { csv: A.csv, emptyIcon: "check", empty: A.empty });
+}
+Object.keys(APPROVAL_VIEWS).forEach((k) => (V[k] = () => approvalsView(k)));
 
 /* ---------- repairs ---------- */
 V.repairs = () => {
@@ -1072,7 +1067,6 @@ const ACT = {
   issue: (el) => issueForm(el.dataset.kind || "transfer"),
   stockin: () => stockForm(),
   csv: (el) => downloadCSV(el.dataset.key),
-  apptab: (el) => { const f = fv("approvals"); f.show = el.dataset.v; if (el.dataset.v !== "all" && f.st && f.st !== "pending") f.st = ""; S.page.approvals = 0; render(); },
   sortdir: (el) => { const st = S.sort[el.dataset.key]; if (st) st.dir = -st.dir; if (el.dataset.key === "hist") drawHist(); else render(); },
   page: (el) => { S.page[el.dataset.key] = +el.dataset.p; render(); window.scrollTo({ top: 0, behavior: "smooth" }); },
   clearf: (el) => { S.f[el.dataset.key] = {}; S.page[el.dataset.key] = 0; render(); },
@@ -1125,7 +1119,9 @@ async function saveSettings(quiet) { await api("settings.save", settingsVals());
 const NAV = [
   { g: "Overview" }, { v: "home", l: "Dashboard", i: "home" }, { v: "inventory", l: "Inventory", i: "box" }, { v: "ledger", l: "Item ledger", i: "book" },
   { g: "Movements" }, { v: "stock", l: "Stock in", i: "in" }, { v: "issues", l: "Issue register", i: "send" },
-  { v: "approvals", l: "Approvals", i: "check", n: () => M.incoming.length, hot: 1 }, { v: "repairs", l: "Repairs", i: "wrench", n: () => M.openRepairs.length }, { v: "damaged", l: "Damaged", i: "alert" },
+{ v: "repairs", l: "Repairs", i: "wrench", n: () => M.openRepairs.length }, { v: "damaged", l: "Damaged", i: "alert" },
+  { g: "Approvals" }, { v: "receive", l: "Waiting for me to receive", i: "inbox", n: () => M.incoming.length, hot: 1 },
+  { v: "sent", l: "Sent, not yet received", i: "send", n: () => M.outgoing.length }, { v: "transfers", l: "All transfers", i: "list" },
   { g: "Records" }, { v: "warranties", l: "Warranties", i: "shield", n: () => M.exp30, hot: 1 },
   { g: "Masters", admin: 1 }, { v: "hostels", l: "Hostels", i: "building", admin: 1 }, { v: "items", l: "Items", i: "tag", admin: 1 }, { v: "categories", l: "Categories", i: "folder", admin: 1 }, { v: "units", l: "Units", i: "box", admin: 1 },
   { v: "places", l: "Damage destinations", i: "trash", admin: 1 }, { v: "users", l: "Users", i: "users", admin: 1 }, { v: "settings", l: "Settings", i: "settings", admin: 1 },
@@ -1139,8 +1135,8 @@ function renderShell() {
   $("#meBox").innerHTML = `<span class="av">${esc(initials(S.me.name))}</span><div class="t"><b>${esc(S.me.name)}</b><span>${esc(S.me.role)}${M.admin ? "" : " · " + esc(hName(M.myH))}</span></div><button class="iconbtn" title="Log out" data-act="logout">${ic("logout")}</button>`;
   $("#orgLine").textContent = M.admin ? `${S.d.hostels.length} hostels` : hName(M.myH);
   const inc = M.incoming.length;
-  const b = (v, l, i) => `<a href="#${v}" class="${S.view === v ? "on" : ""}">${ic(i)}${l}${v === "approvals" && inc ? `<span class="dot">${inc}</span>` : ""}</a>`;
-  $("#bnav").innerHTML = b("home", "Home", "home") + b("inventory", "Inventory", "box") + `<a class="mid" data-act="issue"><span class="c">${ic("plus")}</span>Issue</a>` + b("approvals", "Approvals", "check") + `<a data-act="menu">${ic("menu")}More</a>`;
+  const b = (v, l, i) => `<a href="#${v}" class="${S.view === v ? "on" : ""}">${ic(i)}${l}${v === "receive" && inc ? `<span class="dot">${inc}</span>` : ""}</a>`;
+  $("#bnav").innerHTML = b("home", "Home", "home") + b("inventory", "Inventory", "box") + `<a class="mid" data-act="issue"><span class="c">${ic("plus")}</span>Issue</a>` + b("receive", "Approvals", "check") + `<a data-act="menu">${ic("menu")}More</a>`;
   const nav = NAV.find((n) => n.v === S.view);
   $("#topTitle").textContent = M.admin ? "Hostel Assets" : hName(M.myH);
 }
@@ -1159,10 +1155,11 @@ function render() {
 function go(v) { if (location.hash.slice(1) === v) { S.view = v; render(); } else location.hash = v; }
 function route() {
   let h = location.hash.slice(1) || "home";
+  const legacy = { approvals: "receive", "approvals?in": "receive", "approvals?out": "sent", "approvals?all": "transfers" };
+  if (legacy[h]) { history.replaceState(null, "", "#" + legacy[h]); h = legacy[h]; }
   const [v, arg] = h.split("?");
   const nav = NAV.find((n) => n.v === v);
   S.view = nav && (!nav.admin || M.admin) ? v : "home";
-  if (arg && S.view === "approvals") S.f.approvals = { show: arg };
   if (arg && S.view === "repairs") S.f.repairs = { st: arg };
   if (arg && S.view === "warranties") S.f.warranties = { st: arg };
   if (arg) history.replaceState(null, "", "#" + S.view);
