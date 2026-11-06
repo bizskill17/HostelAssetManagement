@@ -1143,6 +1143,14 @@ document.addEventListener("change", (e) => {
 document.addEventListener("submit", async (e) => {
   if (e.target.id === "setForm") { e.preventDefault(); try { await saveSettings(); } catch (ex) { $("#setErr").textContent = ex.message; } }
 });
+// Enter never saves a form (dialogs, Settings); only the Save button does. Enter still adds a new line in notes boxes.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.isComposing) return;
+  const t = e.target;
+  if (!t.closest || !t.closest(".dlg form, #setForm")) return;
+  if (t.tagName === "TEXTAREA" || t.tagName === "BUTTON") return;
+  e.preventDefault();
+}, true);
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") { S.hist = null; closeDlg(); document.body.classList.remove("drawer"); } });
 $("#menuBtn").addEventListener("click", () => document.body.classList.toggle("drawer"));
 window.addEventListener("hashchange", route);
