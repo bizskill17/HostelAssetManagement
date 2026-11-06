@@ -47,7 +47,17 @@ jobs:
           python3 - <<'PY'
           import os
           def q(v): return "'" + v.replace("\\", "\\\\").replace("'", "\\'") + "'"
-          lines = ["<?php"] + [f"define('{k}', {q(os.environ.get(k, ''))});" for k in ("DB_HOST", "DB_NAME", "DB_USER", "DB_PASS")]
+          # Stray spaces or line breaks from copy-paste are removed.
+          vals = {k: os.environ.get(k, "").strip() for k in ("DB_HOST", "DB_NAME", "DB_USER", "DB_PASS")}
+          # Safe check in the log: says whether each value looks right without printing it.
+          for k, v in vals.items():
+              raw = os.environ.get(k, "")
+              print(f"{k}: {len(v)} characters" + (" (extra spaces/line breaks removed)" if raw != v else "") + ("" if v else "  <-- EMPTY"))
+          print("DB_HOST is 'localhost':", vals["DB_HOST"] == "localhost")
+          print("DB_NAME starts with 'u380752258_':", vals["DB_NAME"].startswith("u380752258_"))
+          print("DB_USER starts with 'u380752258_':", vals["DB_USER"].startswith("u380752258_"))
+          print("DB_USER is different from DB_NAME:", vals["DB_USER"] != vals["DB_NAME"])
+          lines = ["<?php"] + [f"define('{k}', {q(v)});" for k, v in vals.items()]
           open("public/api/config.php", "w").write("\n".join(lines) + "\n")
           PY
 
