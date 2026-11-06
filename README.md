@@ -9,7 +9,7 @@ It runs on Hostinger shared hosting (PHP 8 + MySQL). Every push to `main` deploy
 | Screen | What you do there |
 |---|---|
 | **Dashboard** | Counts, transfers waiting for your approval, items at repair, warranties about to expire |
-| **Inventory** | Hostel, item, unit, category, opening, in, issued, damaged and current count. Click an item to open its ledger |
+| **Inventory** | Hostel, item, unit, category, opening, in, issued, damaged and current count. Click an item to see its full history in a pop-up |
 | **Item ledger** | Every entry for one item (opening → received → transfers → repairs → damage) with a running balance |
 | **Stock in** | Enter **opening stock** (once per item per hostel) and **items received** |
 | **Issue register** | Every issue: **transfer to another hostel**, **send for repair**, or **damaged** |

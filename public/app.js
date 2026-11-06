@@ -289,7 +289,7 @@ V.inventory = () => {
     { h: "At repair", t: (r) => r.atRepair, num: 1, cls: "dim", foot: () => nf(sum("atRepair")) },
     { h: "Transfer pending", t: (r) => (r.pendingOut ? `−${r.pendingOut}` : "") + (r.pendingOut && r.pendingIn ? " / " : "") + (r.pendingIn ? `+${r.pendingIn}` : ""), cls: "dim nw", nosort: 1 },
   ];
-  return head("Inventory", `${esc(combine ? "All hostels combined" : scopeText())} · click an item to open its ledger`, `${csvBtn("inventory")}<button class="btn pri" data-act="issue">${ic("send")}<span class="l">Issue asset</span></button>`)
+  return head("Inventory", `${esc(combine ? "All hostels combined" : scopeText())} · click an item to see its history`, `${csvBtn("inventory")}<button class="btn pri" data-act="issue">${ic("send")}<span class="l">Issue asset</span></button>`)
     + stats([
       { v: nf(rows.length), l: combine ? "Items" : "Hostel × item lines" },
       { v: nf(sum("opening")), l: "Opening count", tone: "slate" },
@@ -322,6 +322,23 @@ V.ledger = () => {
   const bar = `<div class="filters">${hSel}${iSel}<label class="flab">From<input type="date" data-fkey="ledger" data-f="from" value="${esc(f.from || "")}"></label><label class="flab">To<input type="date" data-fkey="ledger" data-f="to" value="${esc(f.to || "")}"></label><div class="search">${ic("search")}<input class="inp" data-fkey="ledger" data-f="q" value="${esc(f.q || "")}" placeholder="Search entries"></div></div>`;
   if (!L.i) return head("Item ledger", "Every entry for one item, from opening stock to today") + bar + `<div class="card"><div class="empty">${ic("book")}<div>Choose an item to see its ledger.</div></div></div>`;
   const item = +L.i, hid = L.h ? +L.h : 0;
+  const { rows, shown, open, inQ, outQ, balance, cols } = ledgerModel(item, hid, f);
+  const it = M.I.get(item) || {};
+  return head("Item ledger", "Every entry for one item, from opening stock to today", csvBtn("ledger"))
+    + bar
+    + stats([
+      { v: nf(open), l: f.from ? "Opening (incl. brought forward)" : "Opening count", tone: "slate" },
+      { v: nf(inQ), l: "Quantity in", tone: "green" },
+      { v: nf(outQ), l: "Quantity out", tone: "red" },
+      { v: nf(balance), l: f.to ? `Balance on ${fmtD(f.to)}` : "Current balance", tone: "cyan" },
+    ])
+    + table("ledger", cols, shown, { csv: `ledger-${(it.name || "item").replace(/\W+/g, "-")}${hid ? "-" + hName(hid).replace(/\W+/g, "-") : ""}`, all: 1,
+      title: `<div class="lhead"><div class="ic blue" style="width:40px;height:40px;border-radius:11px;display:grid;place-items:center">${ic("box")}</div><div><h2>${esc(it.name || "")}</h2><div class="meta">${esc(iCat(item))} · Unit: ${esc(it.unit || "")} · ${esc(hid ? hName(hid) : M.admin ? "All hostels" : hName(M.myH))}</div></div></div>`,
+      empty: "No entries for this item yet." });
+};
+
+/* ---------- ledger model: shared by the Item ledger page and the history pop-up ---------- */
+function ledgerModel(item, hid, f) {
   const order = { opening: 0, in: 1, transfer_in: 2, repair_return: 3, transfer_out: 4, repair_out: 5, damaged: 6 };
   const all = S.d.txns.filter((t) => t.itemId === item && (hid ? t.hostelId === hid : M.scopeH.includes(t.hostelId)))
     .sort((a, b) => cmp(a.at, b.at) || order[a.kind] - order[b.kind] || a.id - b.id);
@@ -352,19 +369,44 @@ V.ledger = () => {
     { h: "By", t: (t) => (t.kind === "bf" ? "" : uName(t.createdBy)), cls: "dim nw" },
     { h: "Notes", t: (t) => t.notes || "", cls: "wrap" },
   ];
+  const balance = rows.length ? rows[rows.length - 1].bal : bf;
+  return { rows, shown, bf, open, inQ, outQ, balance, cols };
+}
+
+/* ---------- item history pop-up ---------- */
+function historyPopup(item, hid) {
+  S.hist = { item, hid, f: {} };
+  closeDlg();
+  const w = document.createElement("div");
+  w.className = "dlg hist";
+  w.innerHTML = `<div class="box wide"></div>`;
+  document.body.appendChild(w);
+  w.addEventListener("mousedown", (e) => { if (e.target === w) closeDlg(); });
+  drawHist();
+}
+function drawHist() {
+  const box = document.querySelector(".dlg.hist .box");
+  if (!box || !S.hist) return;
+  const { item, hid, f } = S.hist;
   const it = M.I.get(item) || {};
-  return head("Item ledger", "Every entry for one item, from opening stock to today", csvBtn("ledger"))
-    + bar
-    + stats([
-      { v: nf(open), l: f.from ? "Opening (incl. brought forward)" : "Opening count", tone: "slate" },
-      { v: nf(inQ), l: "Quantity in", tone: "green" },
-      { v: nf(outQ), l: "Quantity out", tone: "red" },
-      { v: nf(rows.length ? rows[rows.length - 1].bal : bf), l: f.to ? `Balance on ${fmtD(f.to)}` : "Current balance", tone: "cyan" },
-    ])
-    + table("ledger", cols, shown, { csv: `ledger-${(it.name || "item").replace(/\W+/g, "-")}${hid ? "-" + hName(hid).replace(/\W+/g, "-") : ""}`, all: 1,
-      title: `<div class="lhead"><div class="ic blue" style="width:40px;height:40px;border-radius:11px;display:grid;place-items:center">${ic("box")}</div><div><h2>${esc(it.name || "")}</h2><div class="meta">${esc(iCat(item))} · Unit: ${esc(it.unit || "")} · ${esc(hid ? hName(hid) : M.admin ? "All hostels" : hName(M.myH))}</div></div></div>`,
-      empty: "No entries for this item yet." });
-};
+  const where = hid ? hName(hid) : M.admin ? "All hostels" : hName(M.myH);
+  const m = ledgerModel(item, hid, f);
+  const hostelSel = M.admin ? `<select data-hist="hid"><option value="">All hostels</option>${hostelOpts().map(([v, l]) => `<option value="${v}"${v === hid ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>` : "";
+  const keep = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.hist : null;
+  box.innerHTML = `<div class="dh"><div style="display:flex;gap:12px;align-items:center"><div class="ic blue" style="width:42px;height:42px;border-radius:12px;display:grid;place-items:center;flex:none">${ic("book")}</div><div><h2>${esc(it.name || "")}</h2><p>${esc(iCat(item))} · Unit: ${esc(it.unit || "")} · ${esc(where)}</p></div></div><button type="button" class="iconbtn" data-act="closehist" aria-label="Close">${ic("x")}</button></div>
+    <div class="hbody">
+      ${stats([
+        { v: nf(m.open), l: f.from ? "Opening (incl. brought forward)" : "Opening", tone: "slate" },
+        { v: nf(m.inQ), l: "Quantity in", tone: "green" },
+        { v: nf(m.outQ), l: "Quantity out", tone: "red" },
+        { v: nf(m.balance), l: f.to ? `Balance on ${fmtD(f.to)}` : "Current balance", tone: "cyan" },
+      ])}
+      <div class="filters">${hostelSel}<label class="flab">From<input type="date" data-hist="from" value="${esc(f.from || "")}"></label><label class="flab">To<input type="date" data-hist="to" value="${esc(f.to || "")}"></label><div class="search">${ic("search")}<input class="inp" data-hist="q" value="${esc(f.q || "")}" placeholder="Search entries"></div></div>
+      ${table("hist", m.cols, m.shown, { csv: `history-${(it.name || "item").replace(/\W+/g, "-")}${hid ? "-" + hName(hid).replace(/\W+/g, "-") : ""}`, all: 1, empty: "No entries for this item yet." })}
+    </div>
+    <div class="df"><button class="btn" data-act="csv" data-key="hist">${ic("download")}Download CSV</button><button class="btn" data-act="fullledger">${ic("book")}Open item ledger</button><button class="btn pri" data-act="closehist">Close</button></div>`;
+  if (keep) { const el = box.querySelector(`[data-hist="${keep}"]`); if (el) { el.focus(); if (el.type !== "date") { const n = el.value.length; try { el.setSelectionRange(n, n); } catch (_) {} } } }
+}
 
 /* ---------- stock in ---------- */
 V.stock = () => {
@@ -970,10 +1012,12 @@ const ACT = {
   issue: (el) => issueForm(el.dataset.kind || "transfer"),
   stockin: () => stockForm(),
   csv: (el) => downloadCSV(el.dataset.key),
-  sortdir: (el) => { const st = S.sort[el.dataset.key]; if (st) st.dir = -st.dir; render(); },
+  sortdir: (el) => { const st = S.sort[el.dataset.key]; if (st) st.dir = -st.dir; if (el.dataset.key === "hist") drawHist(); else render(); },
   page: (el) => { S.page[el.dataset.key] = +el.dataset.p; render(); window.scrollTo({ top: 0, behavior: "smooth" }); },
   clearf: (el) => { S.f[el.dataset.key] = {}; S.page[el.dataset.key] = 0; render(); },
-  ledger: (el) => { S.ledger = { h: el.dataset.h || "", i: el.dataset.i }; S.f.ledger = {}; go("ledger"); },
+  ledger: (el) => historyPopup(+el.dataset.i, el.dataset.h ? +el.dataset.h : M.admin ? 0 : M.myH),
+  closehist: () => { S.hist = null; closeDlg(); },
+  fullledger: () => { const h = S.hist; S.hist = null; closeDlg(); S.ledger = { h: h.hid ? String(h.hid) : "", i: String(h.item) }; S.f.ledger = {}; go("ledger"); },
   invHostel: (el) => { S.f.inventory = { h: el.dataset.id }; go("inventory"); },
   receive: (el) => receiveForm(+el.dataset.id),
   cancel: async (el) => {
@@ -1072,7 +1116,7 @@ document.addEventListener("click", (e) => {
   const a = e.target.closest("[data-act]");
   if (a) { e.preventDefault(); const fn = ACT[a.dataset.act]; if (fn) fn(a); return; }
   const th = e.target.closest("th[data-sort]");
-  if (th) { const k = th.dataset.sort, i = +th.dataset.i; const s = S.sort[k]; S.sort[k] = !s || s.i !== i ? { i, dir: 1 } : s.dir > 0 ? { i, dir: -1 } : null; S.page[k] = 0; render(); return; }
+  if (th) { const k = th.dataset.sort, i = +th.dataset.i; const s = S.sort[k]; S.sort[k] = !s || s.i !== i ? { i, dir: 1 } : s.dir > 0 ? { i, dir: -1 } : null; S.page[k] = 0; if (k === "hist") drawHist(); else render(); return; }
   const g = e.target.closest("[data-go]");
   if (g) { go(g.dataset.go); return; }
   if (e.target.id === "scrim") document.body.classList.remove("drawer");
@@ -1080,6 +1124,7 @@ document.addEventListener("click", (e) => {
 let ft;
 document.addEventListener("input", (e) => {
   const el = e.target;
+  if (el.dataset.hist === "q" && S.hist) { clearTimeout(ft); ft = setTimeout(() => { S.hist.f.q = el.value; drawHist(); }, 180); return; }
   if (el.dataset.f) {
     clearTimeout(ft);
     const apply = () => { fv(el.dataset.fkey)[el.dataset.f] = el.value; S.page[el.dataset.fkey] = 0; render(); };
@@ -1089,13 +1134,14 @@ document.addEventListener("input", (e) => {
 document.addEventListener("change", (e) => {
   const el = e.target;
   if (el.dataset.led) { S.ledger[el.dataset.led] = el.value; render(); }
-  else if (el.dataset.sortsel) { const k = el.dataset.sortsel; S.sort[k] = el.value === "" ? null : { i: +el.value, dir: (S.sort[k] && S.sort[k].dir) || 1 }; S.page[k] = 0; render(); }
+  else if (el.dataset.sortsel) { const k = el.dataset.sortsel; S.sort[k] = el.value === "" ? null : { i: +el.value, dir: (S.sort[k] && S.sort[k].dir) || 1 }; S.page[k] = 0; if (k === "hist") drawHist(); else render(); }
+  else if (el.dataset.hist && S.hist && (el.tagName === "SELECT" || el.type === "date")) { const k = el.dataset.hist; if (k === "hid") S.hist.hid = el.value ? +el.value : 0; else S.hist.f[k] = el.value; drawHist(); }
   else if (el.dataset.f && (el.tagName === "SELECT" || el.type === "date")) { fv(el.dataset.fkey)[el.dataset.f] = el.value; S.page[el.dataset.fkey] = 0; render(); }
 });
 document.addEventListener("submit", async (e) => {
   if (e.target.id === "setForm") { e.preventDefault(); try { await saveSettings(); } catch (ex) { $("#setErr").textContent = ex.message; } }
 });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDlg(); document.body.classList.remove("drawer"); } });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { S.hist = null; closeDlg(); document.body.classList.remove("drawer"); } });
 $("#menuBtn").addEventListener("click", () => document.body.classList.toggle("drawer"));
 window.addEventListener("hashchange", route);
 

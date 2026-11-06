@@ -158,6 +158,11 @@ tfoot td{background:#f8f9fc;font-weight:700;border-top:1px solid var(--line)}
 /* ---------- dialogs ---------- */
 .dlg{position:fixed;inset:0;background:rgba(15,20,40,.45);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:20px;z-index:80;animation:fade .15s}
 .dlg form,.dlg .box{background:var(--surface);border-radius:18px;width:100%;max-width:520px;max-height:calc(100vh - 40px);display:flex;flex-direction:column;box-shadow:var(--sh-l);animation:pop .18s}
+.dlg .box.wide{max-width:1080px}
+.hbody{padding:12px 20px 4px;overflow-y:auto}
+.hbody .stats{grid-template-columns:repeat(4,1fr)}
+.hbody .filters{box-shadow:none;background:#f8f9fc}
+.hbody .card{box-shadow:none}
 .dh{padding:18px 20px 6px;display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
 .dh h2{font-size:19px}.dh p{margin:3px 0 0;color:var(--muted);font-size:13px}
 .db{padding:10px 20px 4px;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:12px 14px}
@@ -222,6 +227,8 @@ tfoot td{background:#f8f9fc;font-weight:700;border-top:1px solid var(--line)}
   .dlg{align-items:flex-end;padding:0}
   .dlg form,.dlg .box{max-width:none;border-radius:18px 18px 0 0;max-height:92vh}
   .db{grid-template-columns:1fr}.fld.half{grid-column:span 2}
+  .dlg .df{flex-wrap:wrap;gap:6px;padding:10px 12px 14px}.dlg .df .btn{flex:1 1 auto;justify-content:center;padding:9px 10px}
+  .hbody{padding:10px 12px 4px}.hbody .stats{grid-template-columns:repeat(2,1fr)}
   .hero{padding:18px}
   .toast{bottom:92px}
 }
@@ -234,7 +241,7 @@ tfoot td{background:#f8f9fc;font-weight:700;border-top:1px solid var(--line)}
   .tw tbody tr:last-child{border-bottom:0}
   .tw td{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:4px 0;border:0;text-align:right;min-height:26px}
   .tw td::before{content:attr(data-l);color:var(--muted);font-size:12px;font-weight:500;text-align:left;flex:none}
-  .tw td:empty,.tw td.nofoot{display:none}
+  .tw td:empty,.tw td.nofoot,.tw td:has(>span:empty){display:none}
   .tw td:first-child{font-weight:700;font-size:14.5px;padding-bottom:6px}
   .tw td.wrap{max-width:none;min-width:0;text-align:right}
   .tw td.acts-td{padding-top:8px}.tw td.acts-td::before{display:none}
