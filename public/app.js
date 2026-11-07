@@ -42,6 +42,10 @@ const P = {
   move: '<path d="M17 3l4 4-4 4"/><path d="M3 7h18"/><path d="M7 21l-4-4 4-4"/><path d="M21 17H3"/>',
   undo: '<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>',
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  eyeoff: '<path d="M3 3l18 18"/><path d="M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/>',
   bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
@@ -1437,17 +1441,18 @@ function showAuth(mode) {
   let a = $("#auth");
   if (!a) { a = document.createElement("div"); a.id = "auth"; a.className = "auth"; document.body.appendChild(a); }
   const setup = mode === "setup";
-  a.innerHTML = `<form novalidate><div class="logo">${ic("home")}</div><h1>${setup ? "Create the admin account" : "Welcome back"}</h1><p>${setup ? "First-time setup. This account manages hostels, items and users." : "Sign in to Hostel Asset Management"}</p>
-    ${setup ? `<div class="fld"><label>Your name</label><input name="name" autocomplete="name"></div>` : ""}
-    <div class="fld"><label>Email</label><input name="email" type="email" autocomplete="username"></div>
-    <div class="fld"><label>Password</label><input name="password" type="password" autocomplete="${setup ? "new-password" : "current-password"}" ${setup ? 'placeholder="At least 8 characters"' : ""}></div>
-    <div class="err" style="grid-column:auto"></div><button class="btn pri" type="submit">${setup ? "Create account" : "Sign in"}</button></form>`;
+  a.innerHTML = `<form novalidate><div class="band">${setup ? "Create the admin account" : "Hostel Asset Management"}</div><div class="body">
+    ${setup ? `<p class="lead">First-time setup. This account manages hostels, items and users.</p><div class="fld"><label>Your name</label><div class="iw"><input name="name" autocomplete="name"></div></div>` : ""}
+    <div class="fld"><label>Email</label><div class="iw">${ic("mail")}<input name="email" type="email" autocomplete="username" placeholder="name@hostel.com"></div></div>
+    <div class="fld"><label>Password</label><div class="iw">${ic("lock")}<input name="password" type="password" autocomplete="${setup ? "new-password" : "current-password"}" placeholder="${setup ? "At least 8 characters" : "••••••••"}"><button type="button" class="eye" aria-label="Show password">${ic("eye")}</button></div></div>
+    <div class="err"></div><button class="btn pri" type="submit">${setup ? "Create account" : "Sign in"}</button></div></form>`;
   a.hidden = false;
   const f = $("form", a);
   setTimeout(() => f.elements[setup ? "name" : "email"].focus(), 30);
+  $(".eye", f).addEventListener("click", (e) => { const pw = f.password, show = pw.type === "password"; pw.type = show ? "text" : "password"; e.currentTarget.innerHTML = ic(show ? "eyeoff" : "eye"); e.currentTarget.setAttribute("aria-label", show ? "Hide password" : "Show password"); });
   f.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const btn = $("button", f), err = $(".err", f);
+    const btn = $("button[type=submit]", f), err = $(".err", f);
     btn.disabled = true; err.textContent = "";
     try {
       const body = { email: f.email.value.trim(), password: f.password.value };
