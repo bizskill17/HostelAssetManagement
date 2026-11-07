@@ -241,13 +241,13 @@ V.home = () => {
     + stats([
       { v: nf(total), l: "Items in stock", go: "inventory" },
       { v: nf(new Set(rows.filter((r) => r.current > 0).map((r) => r.itemId)).size), l: "Item types in stock", tone: "cyan", go: "inventory" },
-      { v: nf(M.incoming.length), l: "Incoming transfers", tone: M.incoming.length ? "amber" : "slate", go: "receive" },
-      { v: nf(M.outgoing.length), l: "Outgoing transfers", tone: "violet", go: "sent" },
+      { v: nf(M.incoming.length), l: "Incoming transfers", tone: M.incoming.length ? "amber" : "slate", go: "transfers" },
+      { v: nf(M.outgoing.length), l: "Outgoing transfers", tone: "violet", go: "transfers" },
       { v: nf(atRep), l: overdue ? `At repair · ${overdue} overdue` : "At repair", tone: overdue ? "red" : "amber", go: "repairs" },
       { v: nf(dmgMonth), l: "Damaged this month", tone: "red", go: "damaged" },
       { v: nf(M.exp30), l: "Warranties expiring in 30 days", tone: M.exp30 ? "red" : "green", go: "warranties" },
     ], true)
-    + `<div class="grid2"><div><div class="card"><div class="ch"><h3>Incoming transfers</h3><a href="#receive" class="sub">See all</a></div>${apprList}</div><div class="card"><div class="ch"><h3>Recent movements</h3><a href="#issues" class="sub">Issue register</a></div>${recentList}</div></div>`
+    + `<div class="grid2"><div><div class="card"><div class="ch"><h3>Incoming transfers</h3><a href="#transfers" class="sub">See all</a></div>${apprList}</div><div class="card"><div class="ch"><h3>Recent movements</h3><a href="#issues" class="sub">Issue register</a></div>${recentList}</div></div>`
     + `<div>${hostelBars}<div class="card"><div class="ch"><h3>At repair</h3><a href="#repairs" class="sub">Track repairs</a></div>${repList}</div><div class="card"><div class="ch"><h3>Warranties expiring soon</h3><a href="#warranties" class="sub">All warranties</a></div>${warList}</div></div></div>`;
 };
 function daysBadge(n) {
@@ -967,7 +967,7 @@ function issueForm(kind = "transfer") {
       { k: "at", l: "Date", type: "date", val: today(), half: 1 },
       { k: "toHostelId", l: "To hostel", type: "select", blank: "— Choose hostel —", req: 1, show: (v) => v.kind === "transfer",
         opts: (v) => S.d.hostels.filter((h) => h.active && h.id !== +v.hostelId).map((h) => [h.id, h.name]),
-        help: "The receiving hostel will see this under Incoming transfers. Stock moves when they update the quantity received." },
+        help: "The receiving hostel will see this under All transfers, with an Update button. Stock moves when they update the quantity received." },
       { k: "place", l: "Sent to (repairer)", ph: "e.g. Sharma Electricals", show: (v) => v.kind === "repair", half: 1, list: [...new Set(S.d.issues.filter((i) => i.kind === "repair" && i.place).map((i) => i.place))] },
       { k: "expectedAt", l: "Expected back", type: "date", show: (v) => v.kind === "repair", half: 1 },
       { k: "dplace", l: "Sent to after damage (optional)", type: "select", blank: "— Not sent anywhere —", show: (v) => v.kind === "damage", opts: () => S.d.damagePlaces.map((p) => [p.name, p.name]) },
@@ -1120,8 +1120,7 @@ const NAV = [
   { g: "Overview" }, { v: "home", l: "Dashboard", i: "home" }, { v: "inventory", l: "Inventory", i: "box" }, { v: "ledger", l: "Item ledger", i: "book" },
   { g: "Movements" }, { v: "stock", l: "Stock in", i: "in" }, { v: "issues", l: "Issue register", i: "send" },
 { v: "repairs", l: "Repairs", i: "wrench", n: () => M.openRepairs.length }, { v: "damaged", l: "Damaged", i: "alert" },
-  { g: "Approvals" }, { v: "receive", l: "Incoming transfers", i: "inbox", n: () => M.incoming.length, hot: 1 },
-  { v: "sent", l: "Outgoing transfers", i: "send", n: () => M.outgoing.length }, { v: "transfers", l: "All transfers", i: "list" },
+  { g: "Approvals" }, { v: "transfers", l: "All transfers", i: "list", n: () => M.incoming.length, hot: 1 },
   { g: "Records" }, { v: "warranties", l: "Warranties", i: "shield", n: () => M.exp30, hot: 1 },
   { g: "Masters", admin: 1 }, { v: "hostels", l: "Hostels", i: "building", admin: 1 }, { v: "items", l: "Items", i: "tag", admin: 1 }, { v: "categories", l: "Categories", i: "folder", admin: 1 }, { v: "units", l: "Units", i: "box", admin: 1 },
   { v: "places", l: "Damage destinations", i: "trash", admin: 1 }, { v: "users", l: "Users", i: "users", admin: 1 }, { v: "settings", l: "Settings", i: "settings", admin: 1 },
@@ -1135,8 +1134,8 @@ function renderShell() {
   $("#meBox").innerHTML = `<span class="av">${esc(initials(S.me.name))}</span><div class="t"><b>${esc(S.me.name)}</b><span>${esc(S.me.role)}${M.admin ? "" : " · " + esc(hName(M.myH))}</span></div><button class="iconbtn" title="Log out" data-act="logout">${ic("logout")}</button>`;
   $("#orgLine").textContent = M.admin ? `${S.d.hostels.length} hostels` : hName(M.myH);
   const inc = M.incoming.length;
-  const b = (v, l, i) => `<a href="#${v}" class="${S.view === v ? "on" : ""}">${ic(i)}${l}${v === "receive" && inc ? `<span class="dot">${inc}</span>` : ""}</a>`;
-  $("#bnav").innerHTML = b("home", "Home", "home") + b("inventory", "Inventory", "box") + `<a class="mid" data-act="issue"><span class="c">${ic("plus")}</span>Issue</a>` + b("receive", "Approvals", "check") + `<a data-act="menu">${ic("menu")}More</a>`;
+  const b = (v, l, i) => `<a href="#${v}" class="${S.view === v ? "on" : ""}">${ic(i)}${l}${v === "transfers" && inc ? `<span class="dot">${inc}</span>` : ""}</a>`;
+  $("#bnav").innerHTML = b("home", "Home", "home") + b("inventory", "Inventory", "box") + `<a class="mid" data-act="issue"><span class="c">${ic("plus")}</span>Issue</a>` + b("transfers", "Approvals", "check") + `<a data-act="menu">${ic("menu")}More</a>`;
   const nav = NAV.find((n) => n.v === S.view);
   $("#topTitle").textContent = M.admin ? "Hostel Assets" : hName(M.myH);
 }
@@ -1155,7 +1154,7 @@ function render() {
 function go(v) { if (location.hash.slice(1) === v) { S.view = v; render(); } else location.hash = v; }
 function route() {
   let h = location.hash.slice(1) || "home";
-  const legacy = { approvals: "receive", "approvals?in": "receive", "approvals?out": "sent", "approvals?all": "transfers" };
+  const legacy = { approvals: "transfers", "approvals?in": "transfers", "approvals?out": "transfers", "approvals?all": "transfers", receive: "transfers", sent: "transfers" };
   if (legacy[h]) { history.replaceState(null, "", "#" + legacy[h]); h = legacy[h]; }
   const [v, arg] = h.split("?");
   const nav = NAV.find((n) => n.v === v);
