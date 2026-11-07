@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 function ensureSchema(PDO $db): void
 {
@@ -24,7 +24,7 @@ function ensureSchema(PDO $db): void
         "CREATE TABLE IF NOT EXISTS ha_hostels (
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(120) NOT NULL, code VARCHAR(10) NOT NULL DEFAULT '',
-            address VARCHAR(255) NOT NULL DEFAULT '', phone VARCHAR(40) NOT NULL DEFAULT '',
+            address VARCHAR(255) NOT NULL DEFAULT '', phone VARCHAR(40) NOT NULL DEFAULT '', tg_chat VARCHAR(64) NOT NULL DEFAULT '',
             active TINYINT(1) NOT NULL DEFAULT 1, sample TINYINT(1) NOT NULL DEFAULT 0,
             UNIQUE KEY uq_hostel_name (name)
         ) $E",
@@ -92,6 +92,12 @@ function ensureSchema(PDO $db): void
     foreach ($tables as $sql) {
         $db->exec($sql);
     }
+
+    // v5: each hostel can have its own Telegram group; email notifications are gone.
+    if (!$db->query("SHOW COLUMNS FROM ha_hostels LIKE 'tg_chat'")->fetch()) {
+        $db->exec("ALTER TABLE ha_hostels ADD COLUMN tg_chat VARCHAR(64) NOT NULL DEFAULT '' AFTER phone");
+    }
+    $db->exec("DELETE FROM ha_settings WHERE k IN ('email_on', 'email_from', 'email_to')");
 
     // v2: transfers record how many actually arrived.
     if (!$db->query("SHOW COLUMNS FROM ha_issues LIKE 'received_qty'")->fetch()) {

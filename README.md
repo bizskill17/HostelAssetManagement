@@ -18,7 +18,7 @@ It runs on Hostinger shared hosting (PHP 8 + MySQL). Every push to `main` deploy
 | **Damaged** | Everything written off, with where it was sent (optional) |
 | **Warranties** | Warranty / AMC number, supplier, quantity, expiry. Shows what expires in 30 / 90 days |
 | **Masters** (Admin) | Hostels, Items (with unit and category), Categories, Damage destinations, Users |
-| **Settings** (Admin) | Email and Telegram notifications |
+| **Settings** (Admin) | Telegram notifications |
 
 Every list has counts on top, search and filters, and **Download CSV** (which downloads exactly what the filters show).
 
@@ -36,11 +36,13 @@ Every list has counts on top, search and filters, and **Download CSV** (which do
 | **Warden** | Linked to one hostel and sees only that hostel's data. Adds stock, issues items, updates the received quantity of transfers coming in, records repair returns, adds and edits warranties. Cannot delete anything |
 
 ## Notifications
-Set them up under **Settings**:
-- **Email**: goes to all Admins, the wardens of both hostels involved, and any extra addresses you add. It uses Hostinger's PHP mail, so set the **From** address to a mailbox on your domain.
-- **Telegram**: create a bot with @BotFather, add it to your group, then paste the bot token and the group chat ID (it starts with `-100`).
+Notifications go to **Telegram only**. Set them up under **Settings**:
+- Create a bot with @BotFather, add it to your group, then paste the bot token and the **main group** chat ID (it starts with `-100`). The main group gets every message.
+- Optional: give a hostel its own group in **Masters → Hostels → Telegram group ID**. That group gets only that hostel's messages.
+- Tick which messages to send: stock received, transfer sent / received / cancelled, damage reported / approved / rejected, repair sent / returned, and the daily messages (repairs overdue, warranties expiring at 30, 15, 7, 3, 1 and 0 days, morning summary).
+- Daily messages go out once a day after the time set in Settings: on the first app visit after that time, or by the cron job shown in Settings (Hostinger hPanel → Advanced → Cron Jobs, every hour).
 
-Notifications are sent when a transfer is sent and when the receiving hostel updates the quantity received, and when items are sent for repair or come back. Use **Send a test** to check both.
+Use **Send a test** to check every group, and **Send daily messages now** to preview the daily messages.
 
 ## What's in the repo
 
@@ -50,7 +52,7 @@ public/                 ← uploaded to the site's web folder
   app.js                ← the app (all screens)
   api/index.php         ← JSON API: sign-in, data, stock, issues, approvals, repairs, warranties, settings
   api/install.php       ← creates the tables (ha_*) on first run
-  api/notify.php        ← email + Telegram
+  api/notify.php        ← Telegram messages
   api/seed.php          ← sample data
 .github/workflows/deploy.yml  ← deploys to Hostinger over FTP
 ```

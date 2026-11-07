@@ -770,11 +770,14 @@ const MASTERS = {
     cols: [
       { h: "Hostel", t: (r) => r.name, html: (r) => `<span class="lnk" data-act="invHostel" data-id="${r.id}">${esc(r.name)}</span>` },
       { h: "Address", t: (r) => r.address, cls: "wrap" },
+      { h: "Telegram group", t: (r) => r.tgChat || "", html: (r) => (r.tgChat ? `<span class="b green">Connected</span>` : `<span class="dim">—</span>`) },
       { h: "Wardens", t: (r) => S.d.users.filter((u) => u.hostelId === r.id && u.role === "Warden").map((u) => u.name).join(", "), cls: "wrap" },
       { h: "Items in stock", t: (r) => [...M.inv.values()].filter((x) => x.hostelId === r.id).reduce((s, x) => s + x.current, 0), num: 1 },
       { h: "Status", t: (r) => (r.active ? "Active" : "Inactive"), html: (r) => (r.active ? `<span class="b green">Active</span>` : `<span class="b">Inactive</span>`) },
     ],
-    fields: [{ k: "name", l: "Hostel name", req: 1 }, { k: "address", l: "Address / location" }, { k: "active", l: "Active (can receive transfers)", type: "check", val: true }],
+    fields: [{ k: "name", l: "Hostel name", req: 1 }, { k: "address", l: "Address / location" },
+      { k: "tgChat", l: "Telegram group ID", ph: "-1001234567890", help: () => "This hostel's own group gets only this hostel's messages. Leave blank to use only the main group." },
+      { k: "active", l: "Active (can receive transfers)", type: "check", val: true }],
   },
   items: {
     title: "Items", one: "item", sub: "The asset types you count, with their unit and category", icon: "tag",
@@ -853,19 +856,24 @@ function masterView(key) {
 /* ---------- settings ---------- */
 V.settings = () => {
   const s = S.d.settings || {};
-  return head("Settings", "Notifications for transfers and repairs")
-    + `<div class="card" style="max-width:760px"><div class="ch"><h3>Notifications</h3><span class="sub">Sent when items are transferred, received, sent for repair or returned</span></div>
+  const off = new Set(s.tgOff || []);
+  const ev = Object.entries(s.tgEvents || {});
+  const hostelGroups = S.d.hostels.filter((h) => h.tgChat).length;
+  return head("Settings")
+    + `<div class="card" style="max-width:760px"><div class="ch"><h3>Telegram notifications</h3><span class="sub">${hostelGroups ? `Main group + ${hostelGroups} hostel group${hostelGroups > 1 ? "s" : ""}` : "Main group"}</span></div>
     <form id="setForm" class="db" style="padding:18px 20px">
-      <div class="fld"><label class="chk"><input type="checkbox" name="emailOn" ${s.emailOn ? "checked" : ""}> Send email notifications</label><div class="help">Emails go to all Admins and to the wardens of the hostels involved, plus any extra addresses below.</div></div>
-      <div class="fld half"><label>From address</label><input name="emailFrom" type="email" value="${esc(s.emailFrom)}" placeholder="no-reply@yourdomain.com"><div class="help">Use a mailbox on your own domain so emails aren't marked as spam.</div></div>
-      <div class="fld half"><label>Extra recipients</label><input name="emailTo" value="${esc(s.emailTo)}" placeholder="office@…, accounts@…"><div class="help">Separate addresses with commas.</div></div>
-      <div class="fld" style="border-top:1px solid var(--line2);padding-top:14px;margin-top:4px"><label class="chk"><input type="checkbox" name="telegramOn" ${s.telegramOn ? "checked" : ""}> Post to a Telegram group</label><div class="help">Create a bot with <b>@BotFather</b>, add it to your group, then paste its token and the group's chat ID (it starts with <b>-100</b>).</div></div>
+      <div class="fld"><label class="chk"><input type="checkbox" name="telegramOn" ${s.telegramOn ? "checked" : ""}> Send Telegram notifications</label><div class="help">Create a bot with <b>@BotFather</b>, add it to your group, then paste its token and the group's chat ID (it starts with <b>-100</b>). Each hostel can also have its own group: set it in Masters → Hostels.</div></div>
       <div class="fld half"><label>Bot token</label><input name="telegramToken" type="password" autocomplete="new-password" placeholder="${s.telegramTokenSet ? "Saved — leave blank to keep" : "123456:ABC…"}"></div>
-      <div class="fld half"><label>Group chat ID</label><input name="telegramChat" value="${esc(s.telegramChat)}" placeholder="-1001234567890"></div>
+      <div class="fld half"><label>Main group chat ID</label><input name="telegramChat" value="${esc(s.telegramChat)}" placeholder="-1001234567890"><div class="help">Gets every message from all hostels.</div></div>
       <div class="fld"><label>App address (added as a link in messages)</label><input name="appUrl" value="${esc(s.appUrl || location.origin + location.pathname.replace(/index\.html$/, ""))}"></div>
+      <div class="fld" style="border-top:1px solid var(--line2);padding-top:14px;margin-top:4px"><label>Messages to send</label>
+        <div class="evgrid">${ev.map(([k, l]) => `<label class="chk"><input type="checkbox" name="ev_${k}" ${off.has(k) ? "" : "checked"}> ${esc(l)}</label>`).join("")}</div></div>
+      <div class="fld half"><label>Daily messages time</label><input name="dailyTime" type="time" value="${esc(s.dailyTime || "09:00")}"><div class="help">Repairs overdue, warranties expiring and the morning summary go out once a day after this time.${s.lastDaily ? ` Last sent ${fmtD(s.lastDaily)}.` : ""}</div></div>
       <div class="err" id="setErr"></div>
-      <div class="fld" style="flex-direction:row;gap:8px;flex-wrap:wrap"><button class="btn pri" type="submit">Save settings</button><button class="btn" type="button" data-act="testNotify">${ic("bell")}Send a test</button>${s.telegramTokenSet ? `<button class="btn bad" type="button" data-act="clearToken">Remove bot token</button>` : ""}</div>
+      <div class="fld" style="flex-direction:row;gap:8px;flex-wrap:wrap"><button class="btn pri" type="submit">Save settings</button><button class="btn" type="button" data-act="testNotify">${ic("bell")}Send a test</button><button class="btn" type="button" data-act="dailyNow">${ic("clock")}Send daily messages now</button>${s.telegramTokenSet ? `<button class="btn bad" type="button" data-act="clearToken">Remove bot token</button>` : ""}</div>
       <div id="testOut" class="fld"></div>
+      <div class="fld" style="border-top:1px solid var(--line2);padding-top:14px"><label>Cron job (recommended)</label><div class="help">Daily messages also go out when someone opens the app after the set time. To send them even if nobody opens the app, add a cron job in Hostinger hPanel → Advanced → Cron Jobs that runs every hour:</div>
+        <input readonly value="${esc(`curl -s "${s.cronUrl}"`)}" onclick="this.select()" style="font-family:var(--mono,monospace);font-size:12px"></div>
     </form></div>
     <div class="card" style="max-width:760px"><div class="ch"><h3>Sample data</h3><span class="sub">4 hostels with stock, transfers, repairs and warranties to try things out</span></div><div style="padding:16px 20px"><button class="btn" data-act="seed">${ic("box")}Load sample data</button></div></div>`;
 };
@@ -1193,8 +1201,13 @@ const ACT = {
     try {
       await saveSettings(true);
       const r = (await api("settings.test", {})).result;
-      out.innerHTML = ["email", "telegram"].map((k) => `<div class="help ${r[k].ok ? "good" : "warn"}">${k === "email" ? "Email" : "Telegram"}: ${esc(r[k].message || (r[k].ok ? "OK" : "Failed"))}</div>`).join("");
+      out.innerHTML = r.map((x) => `<div class="help ${x.ok ? "good" : "warn"}">${esc(x.name)}: ${esc(x.message || (x.ok ? "OK" : "Failed"))}</div>`).join("");
     } catch (e) { out.innerHTML = `<div class="help warn">${esc(e.message)}</div>`; }
+  },
+  dailyNow: async () => {
+    const out = $("#testOut");
+    try { await saveSettings(true); const r = await api("daily.run", {}); out.innerHTML = `<div class="help ${r.sent ? "good" : "warn"}">${esc(r.message)}</div>`; }
+    catch (e) { out.innerHTML = `<div class="help warn">${esc(e.message)}</div>`; }
   },
   clearToken: async () => { if (await confirmBox("Remove the bot token?", "Telegram messages will stop until you add a token again.", "Remove", true)) await run(() => api("settings.save", { ...settingsVals(), clearToken: 1 }), "Bot token removed"); },
   seed: async () => { if (await confirmBox("Load sample data?", "Adds 4 sample hostels with items, stock, transfers, repairs and warranties. Sample wardens can't sign in until you set a password.", "Load")) await run(() => api("seed"), "Sample data loaded"); },
@@ -1204,7 +1217,7 @@ const ACT = {
 async function run(fn, msg) {
   try { await fn(); if (msg) toast(msg); await reload(); } catch (e) { toast(e.message || "Something went wrong.", true); }
 }
-const settingsVals = () => { const f = $("#setForm"); return { emailOn: f.emailOn.checked, emailFrom: f.emailFrom.value, emailTo: f.emailTo.value, telegramOn: f.telegramOn.checked, telegramChat: f.telegramChat.value, telegramToken: f.telegramToken.value, appUrl: f.appUrl.value }; };
+const settingsVals = () => { const f = $("#setForm"); return { tgOff: Object.keys(S.d.settings.tgEvents || {}).filter((k) => !f["ev_" + k].checked), dailyTime: f.dailyTime.value, telegramOn: f.telegramOn.checked, telegramChat: f.telegramChat.value, telegramToken: f.telegramToken.value, appUrl: f.appUrl.value }; };
 async function saveSettings(quiet) { await api("settings.save", settingsVals()); if (!quiet) { toast("Settings saved"); await reload(); } }
 
 /* =================================================================== shell */

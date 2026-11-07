@@ -212,6 +212,11 @@ function issueRow(int $id): array
 }
 
 /* ---------- row shapes for the app ---------- */
+function cronKey(): string
+{
+    return substr(hash_hmac('sha256', 'hostel-assets-cron', DB_PASS), 0, 32);
+}
+
 function shapeIssue(array $r): array
 {
     return [
@@ -284,7 +289,7 @@ try {
             $admin = isAdmin($u);
             $h = $u['hostel_id'];
             $res = ['me' => publicMe($u)];
-            $res['hostels'] = array_map(fn($r) => ['id' => (int) $r['id'], 'name' => $r['name'], 'code' => $r['code'], 'address' => $r['address'], 'phone' => $r['phone'], 'active' => (bool) $r['active']],
+            $res['hostels'] = array_map(fn($r) => ['id' => (int) $r['id'], 'name' => $r['name'], 'code' => $r['code'], 'address' => $r['address'], 'phone' => $r['phone'], 'active' => (bool) $r['active']] + ($admin ? ['tgChat' => $r['tg_chat']] : []),
                 db()->query("SELECT * FROM ha_hostels ORDER BY name")->fetchAll());
             $res['categories'] = array_map(fn($r) => ['id' => (int) $r['id'], 'name' => $r['name']], db()->query("SELECT * FROM ha_categories ORDER BY name")->fetchAll());
             $res['units'] = array_map(fn($r) => ['id' => (int) $r['id'], 'name' => $r['name']], db()->query("SELECT * FROM ha_units ORDER BY name")->fetchAll());
@@ -320,12 +325,27 @@ try {
             if ($admin) {
                 $s = settings();
                 $res['settings'] = [
-                    'emailOn' => ($s['email_on'] ?? '0') === '1', 'emailFrom' => $s['email_from'] ?? '', 'emailTo' => $s['email_to'] ?? '',
                     'telegramOn' => ($s['telegram_on'] ?? '0') === '1', 'telegramChat' => $s['telegram_chat'] ?? '',
                     'telegramTokenSet' => ($s['telegram_token'] ?? '') !== '', 'appUrl' => $s['app_url'] ?? '',
+                    'tgOff' => array_values(array_filter(explode(',', $s['tg_off'] ?? ''))), 'dailyTime' => $s['daily_time'] ?? '09:00',
+                    'tgEvents' => TG_EVENTS, 'lastDaily' => $s['last_daily'] ?? '',
+                    'cronUrl' => rtrim(($s['app_url'] ?? '') !== '' ? $s['app_url'] : 'https://' . ($_SERVER['HTTP_HOST'] ?? 'localhost'), '/') . '/api/?a=cron&key=' . cronKey(),
                 ];
             }
             $res['today'] = today();
+            // Daily Telegram messages go out on the first visit after the set time, after this reply is sent.
+            register_shutdown_function(function () {
+                if (function_exists('fastcgi_finish_request')) {
+                    fastcgi_finish_request();
+                } elseif (function_exists('litespeed_finish_request')) {
+                    litespeed_finish_request();
+                }
+                try {
+                    runDaily();
+                } catch (Throwable $e) {
+                    error_log('[hostel-assets] daily failed: ' . $e->getMessage());
+                }
+            });
             out($res);
         }
 
@@ -342,9 +362,13 @@ try {
                     if ($name === '') {
                         fail('Enter the hostel name.');
                     }
-                    $vals = [$name, str($d['address'] ?? ''), empty($d['active']) ? 0 : 1];
-                    $id ? q("UPDATE ha_hostels SET name=?, address=?, active=? WHERE id=?", [...$vals, $id])
-                        : q("INSERT INTO ha_hostels (name, address, active) VALUES (?, ?, ?)", $vals);
+                    $tg = preg_replace('/\s+/', '', str($d['tgChat'] ?? '', 64));
+                    if ($tg !== '' && !preg_match('/^(-?\d+|@\w+)$/', $tg)) {
+                        fail('The Telegram group ID should be a number like -1001234567890.');
+                    }
+                    $vals = [$name, str($d['address'] ?? ''), $tg, empty($d['active']) ? 0 : 1];
+                    $id ? q("UPDATE ha_hostels SET name=?, address=?, tg_chat=?, active=? WHERE id=?", [...$vals, $id])
+                        : q("INSERT INTO ha_hostels (name, address, tg_chat, active) VALUES (?, ?, ?, ?)", $vals);
                     break;
                 case 'items':
                     $name = str($d['name'] ?? '', 120);
@@ -500,6 +524,9 @@ try {
             }
             addTxn(['hostel_id' => $hid, 'item_id' => $iid, 'kind' => $kind, 'dir' => 1, 'qty' => $qty,
                 'party' => str($b['party'] ?? '', 160), 'at' => dateOr($b['at'] ?? '', today()), 'notes' => str($b['notes'] ?? '', 500)], $u);
+            if ($kind === 'in') {
+                notifyStockIn($hid, $iid, $qty, str($b['party'] ?? '', 160), str($b['notes'] ?? '', 500), $u);
+            }
             out(['ok' => true]);
         }
 
@@ -698,6 +725,9 @@ try {
                 fail('Only the hostel that entered this can cancel it.', 403, 'forbidden');
             }
             q("UPDATE ha_issues SET status='cancelled', decided_by=?, decided_at=? WHERE id=? AND status='pending'", [$u['id'], nowMs(), $i['id']]);
+            if ($i['kind'] === 'transfer') {
+                notifyIssue('transfer_cancelled', $i, $u);
+            }
             out(['ok' => true]);
         }
 
@@ -812,13 +842,13 @@ try {
         case 'settings.save': {
             requireAdmin();
             $b = body();
-            $emailTo = implode(', ', array_filter(array_map('trim', preg_split('/[,;\s]+/', (string) ($b['emailTo'] ?? ''))), fn($e) => filter_var($e, FILTER_VALIDATE_EMAIL)));
-            $from = str($b['emailFrom'] ?? '', 190);
-            if ($from !== '' && !filter_var($from, FILTER_VALIDATE_EMAIL)) {
-                fail('Enter a valid "From" email address, or leave it blank.');
+            $time = (string) ($b['dailyTime'] ?? '09:00');
+            if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $time)) {
+                fail('Enter the daily message time as HH:MM, e.g. 09:00.');
             }
+            $off = array_values(array_intersect(array_keys(TG_EVENTS), is_array($b['tgOff'] ?? null) ? $b['tgOff'] : []));
             $set = [
-                'email_on' => empty($b['emailOn']) ? '0' : '1', 'email_from' => $from, 'email_to' => $emailTo,
+                'tg_off' => implode(',', $off), 'daily_time' => $time,
                 'telegram_on' => empty($b['telegramOn']) ? '0' : '1', 'telegram_chat' => str($b['telegramChat'] ?? '', 60),
                 'app_url' => str($b['appUrl'] ?? '', 200),
             ];
@@ -836,8 +866,23 @@ try {
         }
 
         case 'settings.test': {
-            $u = requireAdmin();
-            out(['result' => sendTest($u)]);
+            requireAdmin();
+            out(['result' => sendTest()]);
+        }
+
+        case 'daily.run': {
+            // Admin sends today's daily messages now (for checking how they look).
+            requireAdmin();
+            out(runDaily(true));
+        }
+
+        case 'cron': {
+            // Called once a day (or more often) by a Hostinger cron job; sends the daily messages once.
+            $key = (string) ($_GET['key'] ?? '');
+            if ($key === '' || !hash_equals(cronKey(), $key)) {
+                fail('Not allowed.', 403, 'forbidden');
+            }
+            out(runDaily());
         }
 
         /* ===== sample data, used by the deploy workflow or an Admin ===== */
