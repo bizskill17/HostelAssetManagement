@@ -227,7 +227,7 @@ function downloadCSV(key) {
 const head = (title, _sub, acts = "") => `<div class="ph"><div><h1>${esc(title)}</h1></div><div class="acts">${acts}</div></div>`;
 const csvBtn = (key) => `<button class="btn dl" data-act="csv" data-key="${key}" title="Download as CSV">${ic("download")}<span class="l">Download</span></button>`;
 // Count cards appear only on the Dashboard.
-const stats = (list, onDashboard) => !onDashboard ? "" : `<div class="stats">${list.map((s) => `<div class="stat t-${s.tone || "brand"}${s.go ? " click" : ""}" ${s.go ? `data-go="${s.go}"` : ""}><div class="l">${esc(s.l)}</div><div class="v">${esc(s.v)}</div></div>`).join("")}</div>`;
+const stats = (list, onDashboard) => !onDashboard ? "" : `<div class="stats dash">${list.map((s) => `<div class="stat t-${s.tone || "brand"}${s.go ? " click" : ""}" ${s.go ? `data-go="${s.go}"` : ""}><div class="l">${esc(s.l)}</div><div class="v">${esc(s.v)}</div></div>`).join("")}</div>`;
 const scopeText = () => (M.admin ? `All ${S.d.hostels.length} hostels` : hName(M.myH));
 const canWriteHostel = (h) => M.admin || h === M.myH;
 
@@ -261,12 +261,10 @@ V.home = () => {
 
   return head("Dashboard", `${esc(scopeText())} · ${fmtD(today())}`)
     + stats([
-      { v: nf(total), l: "Items in stock", go: "inventory" },
-      { v: nf(new Set(rows.filter((r) => r.current > 0).map((r) => r.itemId)).size), l: "Item types in stock", tone: "cyan", go: "inventory" },
-      { v: nf(M.outgoing.length), l: "Outgoing transfers", tone: "violet", go: "transfer" },
-      { v: nf(M.dmgPending.length), l: "Damage waiting for approval", tone: M.dmgPending.length ? "red" : "slate", go: "damage" },
-      { v: nf(atRep), l: overdue ? `At repair · ${overdue} overdue` : "At repair", tone: overdue ? "red" : "amber", go: "repairs" },
-      { v: nf(dmgMonth), l: "Damaged this month", tone: "red", go: "damaged" },
+      { v: nf(M.incoming.length), l: "Transfer Approval", tone: M.incoming.length ? "amber" : "slate", go: "transfer" },
+      { v: nf(M.dmgPending.length), l: "Damage Approval", tone: M.dmgPending.length ? "red" : "slate", go: "damage" },
+      { v: nf(atRep), l: overdue ? `At Repair · ${overdue} overdue` : "At Repair", tone: overdue ? "red" : "amber", go: "repairs" },
+      { v: nf(dmgMonth), l: "Damage This Month", tone: "red", go: "damaged" },
       { v: nf(M.exp30), l: "Warranties expiring in 30 days", tone: M.exp30 ? "red" : "green", go: "warranties" },
     ], true)
     + `<div class="grid2"><div><div class="card"><div class="ch"><h3>Recent movements</h3><a href="#issues" class="sub">Issue register</a></div>${recentList}</div></div>`
