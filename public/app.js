@@ -37,6 +37,7 @@ const P = {
   x: '<path d="M18 6 6 18M6 6l12 12"/>',
   menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
   list: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/>',
+  chev: '<path d="m6 9 6 6 6-6"/>',
   move: '<path d="M17 3l4 4-4 4"/><path d="M3 7h18"/><path d="M7 21l-4-4 4-4"/><path d="M21 17H3"/>',
   undo: '<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>',
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
@@ -1225,6 +1226,111 @@ try { if (localStorage.getItem("ham_navhidden") === "1") document.body.classList
 $("#menuBtn").addEventListener("click", () => (desktop() ? setNavHidden(false) : document.body.classList.toggle("drawer")));
 $("#hideNav").addEventListener("click", () => setNavHidden(true));
 window.addEventListener("hashchange", route);
+
+/* ---------- searchable dropdowns ----------
+   Every <select> in the app gets a button that opens a list with a search box. The real <select>
+   stays (hidden) and keeps the value, so forms and filters work as before: picking an option sets it
+   and fires the usual input/change events. */
+let SSO = null;
+function closeSS() {
+  if (!SSO) return;
+  SSO.pop.remove();
+  document.removeEventListener("mousedown", SSO.outside, true);
+  window.removeEventListener("scroll", SSO.scrolled, true);
+  window.removeEventListener("resize", closeSS);
+  SSO = null;
+}
+const hl = (t, q) => { if (!q) return esc(t); const i = t.toLowerCase().indexOf(q); return i < 0 ? esc(t) : esc(t.slice(0, i)) + "<b>" + esc(t.slice(i, i + q.length)) + "</b>" + esc(t.slice(i + q.length)); };
+function openSS(sel, btn, initial = "") {
+  closeSS();
+  const pop = document.createElement("div");
+  pop.className = "ss-pop";
+  pop.innerHTML = `<div class="ss-s">${ic("search")}<input placeholder="Search…" autocomplete="off" aria-label="Search options"></div><div class="ss-l" role="listbox"></div>`;
+  document.body.appendChild(pop);
+  const inp = $("input", pop), list = $(".ss-l", pop);
+  const opts = [...sel.options].map((o, i) => ({ i, t: o.text }));
+  let shown = [], act = 0;
+  const draw = () => {
+    const q = inp.value.trim().toLowerCase();
+    // Matches that start with what was typed come first, then matches of a word start, then the rest.
+    const rank = (t) => { t = t.toLowerCase(); return t.startsWith(q) ? 0 : (" " + t).includes(" " + q) ? 1 : 2; };
+    shown = !q ? opts : opts.filter((o) => o.t.toLowerCase().includes(q)).sort((a, b) => rank(a.t) - rank(b.t) || a.i - b.i);
+    act = Math.min(Math.max(act, 0), Math.max(shown.length - 1, 0));
+    list.innerHTML = shown.length
+      ? shown.map((o, k) => `<div class="ss-o${k === act ? " act" : ""}${o.i === sel.selectedIndex ? " sel" : ""}" data-k="${k}" role="option">${hl(o.t, q)}</div>`).join("")
+      : `<div class="ss-none">No matches</div>`;
+    const a = $(".act", list);
+    if (a) a.scrollIntoView({ block: "nearest" });
+  };
+  const place = () => {
+    const r = btn.getBoundingClientRect();
+    const w = Math.max(r.width, 230);
+    pop.style.width = w + "px";
+    pop.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + "px";
+    const h = pop.offsetHeight, below = innerHeight - r.bottom;
+    if (below < h + 8 && r.top > below) { pop.style.top = ""; pop.style.bottom = innerHeight - r.top + 4 + "px"; }
+    else { pop.style.bottom = ""; pop.style.top = r.bottom + 4 + "px"; }
+  };
+  const pick = (o) => {
+    if (!o) return;
+    closeSS();
+    if (sel.selectedIndex !== o.i) {
+      sel.selectedIndex = o.i;
+      sel.dispatchEvent(new Event("input", { bubbles: true }));
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    if (btn.isConnected) btn.focus();
+  };
+  inp.addEventListener("input", () => { act = 0; draw(); });
+  inp.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); act++; draw(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); act--; draw(); }
+    else if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); pick(shown[act]); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeSS(); btn.focus(); }
+    else if (e.key === "Tab") closeSS();
+  });
+  list.addEventListener("mousedown", (e) => e.preventDefault());
+  list.addEventListener("click", (e) => { const o = e.target.closest(".ss-o"); if (o) pick(shown[+o.dataset.k]); });
+  const outside = (e) => { if (!pop.contains(e.target) && !btn.contains(e.target)) closeSS(); };
+  const scrolled = (e) => { if (!pop.contains(e.target)) closeSS(); };
+  SSO = { pop, outside, scrolled };
+  document.addEventListener("mousedown", outside, true);
+  window.addEventListener("scroll", scrolled, true);
+  window.addEventListener("resize", closeSS);
+  inp.value = initial;
+  act = Math.max(0, initial ? 0 : opts.findIndex((o) => o.i === sel.selectedIndex));
+  draw(); place();
+  inp.focus();
+}
+function enhanceSelect(sel) {
+  if (sel.dataset.ss) return;
+  sel.dataset.ss = "1";
+  const wrap = document.createElement("div");
+  wrap.className = "ss";
+  sel.parentNode.insertBefore(wrap, sel);
+  wrap.appendChild(sel);
+  sel.classList.add("ss-native");
+  sel.tabIndex = -1;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "ss-btn";
+  btn.setAttribute("aria-haspopup", "listbox");
+  const lab = sel.getAttribute("aria-label") || (sel.id && document.querySelector(`label[for="${sel.id}"]`)?.textContent.replace("*", "").trim());
+  if (lab) btn.setAttribute("aria-label", lab);
+  wrap.appendChild(btn);
+  const sync = () => { const o = sel.options[sel.selectedIndex]; btn.innerHTML = `<span class="ss-v${!o || o.value === "" ? " ss-ph" : ""}">${esc(o ? o.text : "")}</span>${ic("chev")}`; btn.disabled = sel.disabled; };
+  sync();
+  sel.addEventListener("change", sync);
+  btn.addEventListener("click", () => (SSO ? closeSS() : openSS(sel, btn)));
+  btn.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); openSS(sel, btn); }
+    else if (e.key.length === 1 && e.key !== " " && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); openSS(sel, btn, e.key); }
+  });
+  if (sel.id) { const l = document.querySelector(`label[for="${sel.id}"]`); if (l) l.addEventListener("click", (e) => { e.preventDefault(); btn.focus(); }); }
+}
+const enhanceAll = (root = document) => root.querySelectorAll("select:not([data-ss])").forEach(enhanceSelect);
+new MutationObserver(() => enhanceAll()).observe(document.body, { childList: true, subtree: true });
+enhanceAll();
 
 /* ---------- toast ---------- */
 function toast(t, bad) {
