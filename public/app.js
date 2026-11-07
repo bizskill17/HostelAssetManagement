@@ -405,7 +405,7 @@ function drawHist() {
       <div class="filters">${hostelSel}<label class="flab">From<input type="date" data-hist="from" value="${esc(f.from || "")}"></label><label class="flab">To<input type="date" data-hist="to" value="${esc(f.to || "")}"></label><div class="search">${ic("search")}<input class="inp" data-hist="q" value="${esc(f.q || "")}" placeholder="Search entries"></div></div>
       ${table("hist", m.cols, m.shown, { csv: `history-${(it.name || "item").replace(/\W+/g, "-")}${hid ? "-" + hName(hid).replace(/\W+/g, "-") : ""}`, all: 1, empty: "No entries for this item yet." })}
     </div>
-    <div class="df"><button class="btn" data-act="csv" data-key="hist">${ic("download")}Download CSV</button><button class="btn" data-act="fullledger">${ic("book")}Open item ledger</button><button class="btn pri" data-act="closehist">Close</button></div>`;
+    <div class="df"><button class="btn" data-act="csv" data-key="hist">${ic("download")}Download CSV</button><button class="btn pri" data-act="closehist">Close</button></div>`;
   if (keep) { const el = box.querySelector(`[data-hist="${keep}"]`); if (el) { el.focus(); if (el.type !== "date") { const n = el.value.length; try { el.setSelectionRange(n, n); } catch (_) {} } } }
 }
 
@@ -1118,7 +1118,7 @@ async function saveSettings(quiet) { await api("settings.save", settingsVals());
 
 /* =================================================================== shell */
 const NAV = [
-  { g: "Overview" }, { v: "home", l: "Dashboard", i: "home" }, { v: "inventory", l: "Inventory", i: "box" }, { v: "ledger", l: "Item ledger", i: "book" },
+  { g: "Overview" }, { v: "home", l: "Dashboard", i: "home" }, { v: "inventory", l: "Inventory", i: "box" },
   { g: "Movements" }, { v: "stock", l: "Stock in", i: "in" }, { v: "issues", l: "Issue register", i: "send" },
 { v: "damaged", l: "Damaged", i: "alert" },
   { g: "Approvals" }, { v: "transfer", l: "Transfer", i: "move", n: () => M.incoming.length, hot: 1 },
@@ -1165,7 +1165,7 @@ function render() {
 function go(v) { if (location.hash.slice(1) === v) { S.view = v; render(); } else location.hash = v; }
 function route() {
   let h = location.hash.slice(1) || "home";
-  const legacy = { approvals: "transfer", "approvals?in": "transfer", "approvals?out": "transfer", "approvals?all": "transfers", receive: "transfer", sent: "transfer" };
+  const legacy = { ledger: "inventory", approvals: "transfer", "approvals?in": "transfer", "approvals?out": "transfer", "approvals?all": "transfers", receive: "transfer", sent: "transfer" };
   if (legacy[h]) { history.replaceState(null, "", "#" + legacy[h]); h = legacy[h]; }
   const [v, arg] = h.split("?");
   const nav = NAV.find((n) => n.v === v);
