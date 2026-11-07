@@ -263,14 +263,13 @@ V.home = () => {
     + stats([
       { v: nf(total), l: "Items in stock", go: "inventory" },
       { v: nf(new Set(rows.filter((r) => r.current > 0).map((r) => r.itemId)).size), l: "Item types in stock", tone: "cyan", go: "inventory" },
-      { v: nf(M.incoming.length), l: "Incoming transfers", tone: M.incoming.length ? "amber" : "slate", go: "transfer" },
       { v: nf(M.outgoing.length), l: "Outgoing transfers", tone: "violet", go: "transfer" },
       { v: nf(M.dmgPending.length), l: "Damage waiting for approval", tone: M.dmgPending.length ? "red" : "slate", go: "damage" },
       { v: nf(atRep), l: overdue ? `At repair · ${overdue} overdue` : "At repair", tone: overdue ? "red" : "amber", go: "repairs" },
       { v: nf(dmgMonth), l: "Damaged this month", tone: "red", go: "damaged" },
       { v: nf(M.exp30), l: "Warranties expiring in 30 days", tone: M.exp30 ? "red" : "green", go: "warranties" },
     ], true)
-    + `<div class="grid2"><div><div class="card"><div class="ch"><h3>Incoming transfers</h3><a href="#transfer" class="sub">See all</a></div>${apprList}</div><div class="card"><div class="ch"><h3>Recent movements</h3><a href="#issues" class="sub">Issue register</a></div>${recentList}</div></div>`
+    + `<div class="grid2"><div><div class="card"><div class="ch"><h3>Recent movements</h3><a href="#issues" class="sub">Issue register</a></div>${recentList}</div></div>`
     + `<div>${hostelBars}<div class="card"><div class="ch"><h3>At repair</h3><a href="#repairs" class="sub">Track repairs</a></div>${repList}</div><div class="card"><div class="ch"><h3>Warranties expiring soon</h3><a href="#warranties" class="sub">All warranties</a></div>${warList}</div></div></div>`;
 };
 function daysBadge(n) {
