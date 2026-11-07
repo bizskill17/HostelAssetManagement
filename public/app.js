@@ -92,8 +92,11 @@ const ISSUE_KIND = { transfer: { l: "Transfer", c: "violet" }, repair: { l: "Rep
 const STATUS = {
   pending: { l: "Awaiting receipt", c: "amber" }, received: { l: "Received", c: "green" }, short: { l: "Received short", c: "amber" }, rejected: { l: "Not received", c: "red" }, approved: { l: "Received", c: "green" },
   cancelled: { l: "Cancelled", c: "" }, at_repair: { l: "At repair", c: "amber" }, partly_returned: { l: "Part returned", c: "cyan" },
-  closed: { l: "Closed", c: "green" }, done: { l: "Recorded", c: "red" }, void: { l: "Void", c: "" },
+  closed: { l: "Closed", c: "green" }, done: { l: "Approved", c: "green" }, void: { l: "Void", c: "" },
 };
+// Damage uses its own words for the shared statuses.
+const DMG_STATUS = { pending: { l: "Awaiting approval", c: "amber" }, done: { l: "Approved", c: "green" }, rejected: { l: "Rejected", c: "red" }, cancelled: { l: "Cancelled", c: "" } };
+const issueStatus = (i) => (i.kind === "damage" ? DMG_STATUS[i.status] : STATUS[i.status]) || { l: i.status, c: "" };
 const badge = (o, fallback) => `<span class="b ${o ? o.c : ""}">${esc(o ? o.l : fallback)}</span>`;
 
 function derive() {
@@ -109,7 +112,7 @@ function derive() {
   const get = (h, i) => {
     const k = h + "|" + i;
     let r = inv.get(k);
-    if (!r) inv.set(k, (r = { hostelId: h, itemId: i, opening: 0, in: 0, issued: 0, damaged: 0, current: 0, atRepair: 0, pendingOut: 0, pendingIn: 0 }));
+    if (!r) inv.set(k, (r = { hostelId: h, itemId: i, opening: 0, in: 0, issued: 0, damaged: 0, current: 0, atRepair: 0, pendingOut: 0, pendingIn: 0, pendingDmg: 0 }));
     return r;
   };
   for (const t of d.txns) {
@@ -125,11 +128,13 @@ function derive() {
       if (M.admin || i.hostelId === M.myH) get(i.hostelId, i.itemId).pendingOut += i.qty;
       if (M.admin || i.toHostelId === M.myH) get(i.toHostelId, i.itemId).pendingIn += i.qty;
     }
+    if (i.kind === "damage" && i.status === "pending" && (M.admin || i.hostelId === M.myH)) get(i.hostelId, i.itemId).pendingDmg += i.qty;
     if (i.kind === "repair" && (i.status === "at_repair" || i.status === "partly_returned")) get(i.hostelId, i.itemId).atRepair += i.qty - i.returnedQty - i.scrappedQty;
   }
   M.inv = inv;
   M.incoming = d.issues.filter((i) => i.kind === "transfer" && i.status === "pending" && (M.admin || i.toHostelId === M.myH));
   M.outgoing = d.issues.filter((i) => i.kind === "transfer" && i.status === "pending" && (M.admin || i.hostelId === M.myH));
+  M.dmgPending = d.issues.filter((i) => i.kind === "damage" && i.status === "pending");
   M.openRepairs = d.issues.filter((i) => i.kind === "repair" && (i.status === "at_repair" || i.status === "partly_returned"));
   M.warr = d.warranties.map((w) => ({ ...w, daysLeft: daysBetween(today(), w.expiryAt) }));
   M.exp30 = M.warr.filter((w) => w.daysLeft >= 0 && w.daysLeft <= 30).length;
@@ -139,7 +144,7 @@ const iName = (id) => (M.I.get(id) || {}).name || "—";
 const iUnit = (id) => (M.I.get(id) || {}).unit || "";
 const iCat = (id) => (M.C.get((M.I.get(id) || {}).categoryId) || {}).name || "—";
 const uName = (id) => (id ? (M.U.get(id) || {}).name || "—" : "System");
-const available = (h, i) => { const r = M.inv.get(h + "|" + i); return r ? r.current - r.pendingOut : 0; };
+const available = (h, i) => { const r = M.inv.get(h + "|" + i); return r ? r.current - r.pendingOut - r.pendingDmg : 0; };
 const outstanding = (i) => i.qty - i.returnedQty - i.scrappedQty;
 const isOverdue = (i) => i.expectedAt && i.expectedAt < today() && outstanding(i) > 0;
 
@@ -260,6 +265,7 @@ V.home = () => {
       { v: nf(new Set(rows.filter((r) => r.current > 0).map((r) => r.itemId)).size), l: "Item types in stock", tone: "cyan", go: "inventory" },
       { v: nf(M.incoming.length), l: "Incoming transfers", tone: M.incoming.length ? "amber" : "slate", go: "transfer" },
       { v: nf(M.outgoing.length), l: "Outgoing transfers", tone: "violet", go: "transfer" },
+      { v: nf(M.dmgPending.length), l: "Damage waiting for approval", tone: M.dmgPending.length ? "red" : "slate", go: "damage" },
       { v: nf(atRep), l: overdue ? `At repair · ${overdue} overdue` : "At repair", tone: overdue ? "red" : "amber", go: "repairs" },
       { v: nf(dmgMonth), l: "Damaged this month", tone: "red", go: "damaged" },
       { v: nf(M.exp30), l: "Warranties expiring in 30 days", tone: M.exp30 ? "red" : "green", go: "warranties" },
@@ -284,8 +290,8 @@ V.inventory = () => {
     const m = new Map();
     for (const r of rows) {
       let x = m.get(r.itemId);
-      if (!x) m.set(r.itemId, (x = { hostelId: 0, itemId: r.itemId, opening: 0, in: 0, issued: 0, damaged: 0, current: 0, atRepair: 0, pendingOut: 0, pendingIn: 0 }));
-      for (const k of ["opening", "in", "issued", "damaged", "current", "atRepair", "pendingOut", "pendingIn"]) x[k] += r[k];
+      if (!x) m.set(r.itemId, (x = { hostelId: 0, itemId: r.itemId, opening: 0, in: 0, issued: 0, damaged: 0, current: 0, atRepair: 0, pendingOut: 0, pendingIn: 0, pendingDmg: 0 }));
+      for (const k of ["opening", "in", "issued", "damaged", "current", "atRepair", "pendingOut", "pendingIn", "pendingDmg"]) x[k] += r[k];
     }
     rows = [...m.values()];
   }
@@ -305,6 +311,7 @@ V.inventory = () => {
     { h: "Damaged", t: (r) => r.damaged, num: 1, html: (r) => r.damaged ? `<span class="qout">${nf(r.damaged)}</span>` : "0", foot: () => nf(sum("damaged")) },
     { h: "Current inventory", t: (r) => r.current, num: 1, cls: "strong", html: (r) => `<b>${nf(r.current)}</b>`, foot: () => nf(sum("current")) },
     { h: "At repair", t: (r) => r.atRepair, num: 1, cls: "dim", foot: () => nf(sum("atRepair")) },
+    { h: "Damage pending", t: (r) => r.pendingDmg || "", num: 1, cls: "dim" },
     { h: "Transfer pending", t: (r) => (r.pendingOut ? `−${r.pendingOut}` : "") + (r.pendingOut && r.pendingIn ? " / " : "") + (r.pendingIn ? `+${r.pendingIn}` : ""), cls: "dim nw", nosort: 1 },
   ];
   return head("Inventory", `${esc(combine ? "All hostels combined" : scopeText())} · click an item to see its history`, `${csvBtn("inventory")}<button class="btn pri" data-act="issue">${ic("send")}<span class="l">Issue asset</span></button>`)
@@ -473,7 +480,7 @@ function issueCols(withActs = true) {
     { h: "Qty", t: (i) => i.qty, num: 1, html: (i) => `<b>${nf(i.qty)}</b> <span class="dim">${esc(iUnit(i.itemId))}</span>` },
     { h: "Received", t: (i) => (i.kind === "transfer" && i.receivedQty != null ? i.receivedQty : ""), num: 1, html: recvHtml },
     { h: "To / sent to", t: (i) => (i.kind === "transfer" ? hName(i.toHostelId) : i.place || ""), cls: "nw" },
-    { h: "Status", t: (i) => (STATUS[i.status] || {}).l || i.status, html: (i) => badge(STATUS[i.status], i.status) },
+    { h: "Status", t: (i) => issueStatus(i).l, html: (i) => badge(issueStatus(i)) },
     { h: "By", t: (i) => uName(i.createdBy), cls: "dim nw" },
     { h: "Notes", t: (i) => [i.notes, i.decisionNote && "Receiver: " + i.decisionNote].filter(Boolean).join(" · "), cls: "wrap" },
   ];
@@ -491,6 +498,10 @@ function issueActs(i) {
   if (i.kind === "transfer" && i.status === "pending") {
     if (canWriteHostel(i.toHostelId)) b.push(`<button class="btn sm pri" data-act="receive" data-id="${i.id}">${ic("edit")}Update</button>`);
     if (canWriteHostel(i.hostelId)) b.push(`<button class="btn sm" data-act="cancel" data-id="${i.id}">Cancel</button>`);
+  }
+  if (i.kind === "damage" && i.status === "pending") {
+    if (M.admin) b.push(`<button class="btn sm ok" data-act="dmgok" data-id="${i.id}">Approve</button><button class="btn sm bad" data-act="dmgno" data-id="${i.id}">Reject</button>`);
+    else if (canWriteHostel(i.hostelId)) b.push(`<button class="btn sm" data-act="cancel" data-id="${i.id}">Cancel</button>`);
   }
   if (i.kind === "repair" && outstanding(i) > 0 && (i.status === "at_repair" || i.status === "partly_returned") && canWriteHostel(i.hostelId)) b.push(`<button class="btn sm ok" data-act="return" data-id="${i.id}">Record return</button>`);
   if (M.admin) b.push(isReceived(i)
@@ -548,7 +559,7 @@ function approvalsView(key) {
     { h: "Send qty", t: (i) => i.qty, num: 1, html: (i) => `<b>${nf(i.qty)}</b>` },
     { h: "Received qty", t: (i) => i.receivedQty ?? "", num: 1, html: recvHtml },
     { h: "Short", t: short, num: 1, html: (i) => (short(i) ? `<span class="qout">${nf(short(i))}</span>` : i.receivedQty == null ? "" : "0") },
-    { h: "Status", t: (i) => (STATUS[i.status] || {}).l || i.status, html: (i) => badge(STATUS[i.status], i.status) },
+    { h: "Status", t: (i) => issueStatus(i).l, html: (i) => badge(issueStatus(i)) },
     { h: "Sent by", t: (i) => uName(i.createdBy), cls: "dim nw" },
     { h: "Updated", t: (i) => (i.decidedAt ? fmtTs(i.decidedAt) + " · " + uName(i.decidedBy) : ""), cls: "dim nw" },
     { h: "Notes", t: (i) => [i.notes, i.decisionNote && "Receiver: " + i.decisionNote].filter(Boolean).join(" · "), cls: "wrap" },
@@ -565,6 +576,62 @@ function approvalsView(key) {
     + table(key, cols, rows, { csv: A.csv, emptyIcon: "check", empty: A.empty });
 }
 Object.keys(APPROVAL_VIEWS).forEach((k) => (V[k] = () => approvalsView(k)));
+
+/* ---------- damage approval ---------- */
+V.damage = () => {
+  const f = fv("damage");
+  if (f.st === undefined) f.st = "pending";
+  const rows = S.d.issues.filter((i) => i.kind === "damage")
+    .filter((i) => (!f.st || i.status === f.st) && (!f.h || i.hostelId === +f.h) && inRange(i.at, f))
+    .filter((i) => match(f.q, i.no, iName(i.itemId), hName(i.hostelId), i.place, i.notes, i.decisionNote));
+  const cols = [
+    { h: "No.", t: (i) => i.no, html: (i) => `<span class="mono">${esc(i.no)}</span>`, cls: "nw" },
+    { h: "Date", t: (i) => i.at, html: (i) => fmtD(i.at), cls: "nw" },
+    { h: "Hostel", t: (i) => hName(i.hostelId), cls: "nw" },
+    { h: "Item", t: (i) => iName(i.itemId), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(iName(i.itemId))}</span>` },
+    { h: "Unit", t: (i) => iUnit(i.itemId), cls: "dim" },
+    { h: "Reported qty", t: (i) => i.qty, num: 1, html: (i) => `<b>${nf(i.qty)}</b>` },
+    { h: "Approved qty", t: (i) => i.receivedQty ?? "", num: 1, html: (i) => (i.receivedQty == null ? `<span class="dim">—</span>` : i.receivedQty < i.qty ? `<span class="qout">${nf(i.receivedQty)}</span>` : nf(i.receivedQty)) },
+    { h: "Sent to", t: (i) => i.place || "", cls: "nw" },
+    { h: "Status", t: (i) => issueStatus(i).l, html: (i) => badge(issueStatus(i)) },
+    { h: "Reported by", t: (i) => uName(i.createdBy), cls: "dim nw" },
+    { h: "Decided", t: (i) => (i.decidedAt && i.status !== "pending" ? fmtTs(i.decidedAt) + " · " + uName(i.decidedBy) : ""), cls: "dim nw" },
+    { h: "Notes", t: (i) => [i.notes, i.decisionNote && "Admin: " + i.decisionNote].filter(Boolean).join(" · "), cls: "wrap" },
+    { h: "", t: () => "", nocsv: 1, nosort: 1, html: issueActs },
+  ];
+  return head("Damage", "", `${csvBtn("damage")}<button class="btn pri" data-act="issue" data-kind="damage">${ic("alert")}<span class="l">Mark damaged</span></button>`)
+    + filterBar("damage", [
+      { k: "q", type: "search", ph: "Search no., item, hostel or notes" },
+      { k: "st", l: "Status", opts: [["pending", "Awaiting approval"], ["done", "Approved"], ["rejected", "Rejected"], ["cancelled", "Cancelled"]], all: "All statuses" },
+      { k: "h", l: "Hostel", opts: hostelOpts(), all: "All hostels", hide: !M.admin },
+      { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
+    ])
+    + table("damage", cols, rows, { csv: "damage-approvals", emptyIcon: "alert", empty: f.st === "pending" ? "No damage waiting for approval." : "No damage entries to show." });
+};
+function damageDecideForm(id, approve) {
+  const i = S.d.issues.find((x) => x.id === id);
+  if (!i) return;
+  const u = iUnit(i.itemId);
+  const info = { k: "info", type: "info", html: () => `${esc(hName(i.hostelId))} reported <b>${nf(i.qty)} ${esc(u)}</b> of ${esc(iName(i.itemId))} as damaged on ${fmtD(i.at)}${i.place ? `, to be sent to <b>${esc(i.place)}</b>` : ""}. Reported by ${esc(uName(i.createdBy))}.${i.notes ? `<br>“${esc(i.notes)}”` : ""}` };
+  if (approve) {
+    openForm({
+      title: "Approve damage", sub: `<span class="mono">${esc(i.no)}</span> · ${esc(iName(i.itemId))} · ${esc(hName(i.hostelId))}`,
+      fields: [info,
+        { k: "qty", l: "Approved qty", type: "number", req: 1, half: 1, val: String(i.qty),
+          help: (v) => { const q = +v.qty; if (v.qty === "" || isNaN(q)) return ""; if (q > i.qty) return { t: `Can't be more than ${nf(i.qty)}`, c: "warn" }; if (q < i.qty && q > 0) return { t: `${nf(i.qty - q)} stay in stock`, c: "warn" }; return ""; } },
+        { k: "note", l: "Note", type: "textarea", ph: "Reason for approving fewer, remarks…" }],
+      submit: "Approve",
+      onSubmit: async (v) => { await api("damage.decide", { id, decision: "approve", qty: +v.qty, note: v.note }); return `${i.no}: ${nf(+v.qty)} ${u} approved as damaged`; },
+    });
+  } else {
+    openForm({
+      title: "Reject damage", sub: `<span class="mono">${esc(i.no)}</span> · ${esc(iName(i.itemId))} · ${esc(hName(i.hostelId))}`, danger: true,
+      fields: [info, { k: "note", l: "Reason", type: "textarea", req: 1, ph: "Tell the hostel why" }],
+      submit: "Reject",
+      onSubmit: async (v) => { await api("damage.decide", { id, decision: "reject", note: v.note }); return `${i.no} rejected`; },
+    });
+  }
+}
 
 /* ---------- repairs ---------- */
 V.repairs = () => {
@@ -586,7 +653,7 @@ V.repairs = () => {
     { h: "Still out", t: (i) => outstanding(i), num: 1, html: (i) => `<b>${nf(outstanding(i))}</b>` },
     { h: "Expected back", t: (i) => i.expectedAt || "", html: (i) => (i.expectedAt ? (isOverdue(i) ? `<span class="qout" title="Overdue">${fmtD(i.expectedAt)}</span>` : fmtD(i.expectedAt)) : `<span class="dim">—</span>`), cls: "nw" },
     { h: "Days out", t: (i) => (outstanding(i) > 0 ? daysBetween(i.at, today()) : ""), num: 1, cls: "dim" },
-    { h: "Status", t: (i) => STATUS[i.status].l, html: (i) => (isOverdue(i) ? `<span class="b red">Overdue</span>` : badge(STATUS[i.status])) },
+    { h: "Status", t: (i) => issueStatus(i).l, html: (i) => (isOverdue(i) ? `<span class="b red">Overdue</span>` : badge(issueStatus(i))) },
     { h: "Notes", t: (i) => i.notes || "", cls: "wrap" },
     { h: "", t: () => "", nocsv: 1, nosort: 1, html: issueActs },
   ];
@@ -955,7 +1022,7 @@ function stockForm() {
       { k: "kind", l: "Type", type: "seg", opts: () => [["in", "Received", "in"], ["opening", "Opening stock", "box"]], val: "in" },
       { k: "hostelId", l: "Hostel", type: "select", opts: () => hs, val: String(M.admin ? hs[0][0] : M.myH), show: () => M.admin, req: 1 },
       { k: "itemId", l: "Item", type: "select", blank: "— Choose item —", opts: () => groupedItems(items), req: 1,
-        help: (v) => (v.itemId ? (v.kind === "opening" && hasOpening(v.hostelId, v.itemId) ? { t: "Opening stock is already entered for this item at this hostel. Use Received instead.", c: "warn" } : { t: `In stock now: <b>${nf(available(+v.hostelId, +v.itemId) + ((M.inv.get(v.hostelId + "|" + v.itemId) || {}).pendingOut || 0))}</b> ${esc(iUnit(+v.itemId))}` }) : "") },
+        help: (v) => (v.itemId ? (v.kind === "opening" && hasOpening(v.hostelId, v.itemId) ? { t: "Opening stock is already entered for this item at this hostel. Use Received instead.", c: "warn" } : { t: `In stock now: <b>${nf((M.inv.get(v.hostelId + "|" + v.itemId) || {}).current || 0)}</b> ${esc(iUnit(+v.itemId))}` }) : "") },
       { k: "qty", l: "Quantity", type: "number", req: 1, half: 1 },
       { k: "at", l: (v) => (v.kind === "opening" ? "As of date" : "Date received"), type: "date", val: today(), half: 1 },
       { k: "notes", l: "Notes", type: "textarea", req: (v) => v.kind === "in", ph: (v) => (v.kind === "in" ? "Where it came from, bill number…" : "Remarks") },
@@ -995,7 +1062,7 @@ function issueForm(kind = "transfer") {
     submit: "Issue",
     onSubmit: async (v) => {
       const r = await api("issue.create", { kind: v.kind, hostelId: +v.hostelId, itemId: +v.itemId, qty: +v.qty, at: v.at, toHostelId: v.toHostelId ? +v.toHostelId : null, place: v.kind === "damage" ? v.dplace : v.place, expectedAt: v.expectedAt, notes: v.notes });
-      return v.kind === "transfer" ? `${r.issue.no} sent to ${hName(+v.toHostelId)} for approval` : v.kind === "repair" ? `${r.issue.no}: sent for repair` : `${r.issue.no}: marked damaged`;
+      return v.kind === "transfer" ? `${r.issue.no} sent to ${hName(+v.toHostelId)} for approval` : v.kind === "repair" ? `${r.issue.no}: sent for repair` : r.issue.status === "pending" ? `${r.issue.no}: sent to Admin for approval` : `${r.issue.no}: marked damaged`;
     },
   });
 }
@@ -1034,7 +1101,7 @@ function returnForm(id) {
     fields: [
       { k: "info", type: "info", html: () => `Sent <b>${nf(i.qty)}</b> on ${fmtD(i.at)}${i.place ? " to <b>" + esc(i.place) + "</b>" : ""}. Already back: <b>${nf(i.returnedQty)}</b>, not repairable: <b>${nf(i.scrappedQty)}</b>. <b>${nf(out)}</b> still at repair.` },
       { k: "okQty", l: "Repaired and returned", type: "number", half: 1, val: String(out), help: "Goes back into stock." },
-      { k: "scrapQty", l: "Not repairable", type: "number", half: 1, val: "0", help: "Counted as damaged." },
+      { k: "scrapQty", l: "Not repairable", type: "number", half: 1, val: "0", help: M.admin ? "Counted as damaged." : "Sent to an Admin for damage approval." },
       { k: "place", l: "Not repairable items sent to", type: "select", blank: "— Not sent anywhere —", opts: () => S.d.damagePlaces.map((p) => [p.name, p.name]), show: (v) => +v.scrapQty > 0 },
       { k: "at", l: "Date returned", type: "date", val: today() },
       { k: "notes", l: "Notes", type: "textarea", ph: "Repair bill, remarks…" },
@@ -1086,6 +1153,8 @@ const ACT = {
   csv: (el) => downloadCSV(el.dataset.key),
   ftoggle: (el) => { S.fopen[el.dataset.key] = !S.fopen[el.dataset.key]; render(); },
   fchip: (el) => { fv(el.dataset.key)[el.dataset.k] = ""; S.page[el.dataset.key] = 0; render(); },
+  dmgok: (el) => damageDecideForm(+el.dataset.id, true),
+  dmgno: (el) => damageDecideForm(+el.dataset.id, false),
   sortdir: (el) => { const st = S.sort[el.dataset.key]; if (st) st.dir = -st.dir; if (el.dataset.key === "hist") drawHist(); else render(); },
   page: (el) => { S.page[el.dataset.key] = +el.dataset.p; render(); window.scrollTo({ top: 0, behavior: "smooth" }); },
   clearf: (el) => { S.f[el.dataset.key] = {}; S.page[el.dataset.key] = 0; render(); },
@@ -1096,7 +1165,8 @@ const ACT = {
   receive: (el) => receiveForm(+el.dataset.id),
   cancel: async (el) => {
     const i = S.d.issues.find((x) => x.id === +el.dataset.id);
-    if (await confirmBox("Cancel this transfer?", `${esc(i.no)} to ${esc(hName(i.toHostelId))} will be withdrawn. No stock has moved yet.`, "Cancel transfer", true)) await run(() => api("issue.cancel", { id: i.id }), "Transfer cancelled");
+    const dmg = i.kind === "damage";
+    if (await confirmBox(dmg ? "Cancel this damage report?" : "Cancel this transfer?", dmg ? `${esc(i.no)} will be withdrawn. Stock is unchanged.` : `${esc(i.no)} to ${esc(hName(i.toHostelId))} will be withdrawn. No stock has moved yet.`, dmg ? "Cancel report" : "Cancel transfer", true)) await run(() => api("issue.cancel", { id: i.id }), dmg ? "Damage report cancelled" : "Transfer cancelled");
   },
   delissue: async (el) => {
     const i = S.d.issues.find((x) => x.id === +el.dataset.id);
@@ -1140,6 +1210,7 @@ const NAV = [
   { g: "Movements" }, { v: "stock", l: "Stock in", i: "in" }, { v: "issues", l: "Issue register", i: "send" },
 { v: "damaged", l: "Damaged", i: "alert" },
   { g: "Approvals" }, { v: "transfer", l: "Transfer", i: "move", n: () => M.incoming.length, hot: 1 },
+  { v: "damage", l: "Damage", i: "alert", n: () => M.dmgPending.length, hot: 1 },
   { v: "repairs", l: "Repair", i: "wrench", n: () => M.openRepairs.length }, { v: "transfers", l: "All transfers", i: "list" },
   { g: "Records" }, { v: "warranties", l: "Warranties", i: "shield", n: () => M.exp30, hot: 1 },
   { g: "Masters", admin: 1 }, { v: "hostels", l: "Hostels", i: "building", admin: 1 }, { v: "items", l: "Items", i: "tag", admin: 1 }, { v: "categories", l: "Categories", i: "folder", admin: 1 }, { v: "units", l: "Units", i: "box", admin: 1 },

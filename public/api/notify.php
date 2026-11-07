@@ -1,6 +1,6 @@
 <?php
 /**
- * Email and Telegram notifications for transfers (sent / received) and repairs.
+ * Email and Telegram notifications for transfers (sent / received), repairs and damage approvals.
  * Who gets emails: all active Admins, the wardens of both hostels involved, and any extra
  * addresses in Settings. Telegram posts one message to the group set in Settings.
  * A failed notification never blocks the stock change; it is written to the PHP error log.
@@ -56,6 +56,22 @@ function notifyIssue(string $event, array $i, array $by, array $extra = []): voi
                 if ($i['decision_note'] !== '') {
                     $lines[] = 'Note from ' . $toName . ': ' . $i['decision_note'];
                 }
+                break;
+            case 'damage_reported':
+                $subject = "Damage $no: $what at $fromName needs approval";
+                $lines = ["$fromName reported $what as damaged" . ($i['place'] !== '' ? ", to be sent to {$i['place']}" : '') . '.', 'An Admin needs to approve it before stock goes down.'];
+                break;
+            case 'damage_approved':
+                $got = (int) $i['received_qty'];
+                $subject = "Damage $no approved: " . ($item['name'] ?? 'Item') . " × $got at $fromName";
+                $lines = [$got < (int) $i['qty'] ? "$got of " . (int) $i['qty'] . " approved as damaged; the rest stay in stock." : "$what written off as damaged at $fromName."];
+                if ($i['decision_note'] !== '') {
+                    $lines[] = 'Note: ' . $i['decision_note'];
+                }
+                break;
+            case 'damage_rejected':
+                $subject = "Damage $no rejected at $fromName";
+                $lines = ["The damage report for $what was rejected. Stock is unchanged.", 'Reason: ' . $i['decision_note']];
                 break;
             case 'repair_sent':
                 $subject = "Repair $no: $what sent from $fromName";

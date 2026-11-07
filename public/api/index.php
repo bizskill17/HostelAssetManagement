@@ -156,7 +156,26 @@ function onHand(int $hid, int $iid): int
 }
 function pendingOut(int $hid, int $iid, int $exceptIssue = 0): int
 {
-    return (int) q("SELECT COALESCE(SUM(qty), 0) FROM ha_issues WHERE kind = 'transfer' AND status = 'pending' AND hostel_id = ? AND item_id = ? AND id <> ?", [$hid, $iid, $exceptIssue])->fetchColumn();
+    // Stock set aside: transfers not yet received and damage not yet approved.
+    return (int) q("SELECT COALESCE(SUM(qty), 0) FROM ha_issues WHERE kind IN ('transfer', 'damage') AND status = 'pending' AND hostel_id = ? AND item_id = ? AND id <> ?", [$hid, $iid, $exceptIssue])->fetchColumn();
+}
+/**
+ * Records damage. An Admin's entry is approved at once (stock goes down); a Warden's waits for an
+ * Admin's approval (stock is only set aside). The confirmed quantity is kept in received_qty.
+ */
+function recordDamage(array $u, int $hid, int $iid, int $qty, string $place, string $at, string $notes): array
+{
+    $approved = isAdmin($u);
+    q("INSERT INTO ha_issues (kind, status, hostel_id, item_id, qty, place, at, notes, received_qty, created_by, created_at, decided_by, decided_at)
+       VALUES ('damage', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [
+        $approved ? 'done' : 'pending', $hid, $iid, $qty, $place, $at, $notes, $approved ? $qty : null, $u['id'], nowMs(),
+        $approved ? $u['id'] : null, $approved ? nowMs() : null,
+    ]);
+    $id = (int) db()->lastInsertId();
+    if ($approved) {
+        addTxn(['hostel_id' => $hid, 'item_id' => $iid, 'kind' => 'damaged', 'dir' => -1, 'qty' => $qty, 'issue_id' => $id, 'party' => $place, 'at' => $at, 'notes' => $notes], $u);
+    }
+    return issueRow($id);
 }
 function lockHostel(int $hid): void
 {
@@ -557,7 +576,15 @@ try {
                 db()->rollBack();
                 fail("Only $avail {$item['unit']} of {$item['name']} available to issue at this hostel.");
             }
-            $status = ['transfer' => 'pending', 'repair' => 'at_repair', 'damage' => 'done'][$kind];
+            if ($kind === 'damage') {
+                $issue = recordDamage($u, $hid, $iid, $qty, $place, $at, $notes);
+                db()->commit();
+                if ($issue['status'] === 'pending') {
+                    notifyIssue('damage_reported', $issue, $u);
+                }
+                out(['ok' => true, 'issue' => shapeIssue($issue)]);
+            }
+            $status = ['transfer' => 'pending', 'repair' => 'at_repair'][$kind];
             q("INSERT INTO ha_issues (kind, status, hostel_id, to_hostel_id, item_id, qty, place, at, expected_at, notes, created_by, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [
                 $kind, $status, $hid, $kind === 'transfer' ? $to : null, $iid, $qty, $kind === 'transfer' ? '' : $place, $at,
@@ -566,14 +593,10 @@ try {
             $issueId = (int) db()->lastInsertId();
             if ($kind === 'repair') {
                 addTxn(['hostel_id' => $hid, 'item_id' => $iid, 'kind' => 'repair_out', 'dir' => -1, 'qty' => $qty, 'issue_id' => $issueId, 'party' => $place, 'at' => $at, 'notes' => $notes], $u);
-            } elseif ($kind === 'damage') {
-                addTxn(['hostel_id' => $hid, 'item_id' => $iid, 'kind' => 'damaged', 'dir' => -1, 'qty' => $qty, 'issue_id' => $issueId, 'party' => $place, 'at' => $at, 'notes' => $notes], $u);
             }
             db()->commit();
             $issue = issueRow($issueId);
-            if ($kind !== 'damage') {
-                notifyIssue($kind === 'transfer' ? 'transfer_sent' : 'repair_sent', $issue, $u);
-            }
+            notifyIssue($kind === 'transfer' ? 'transfer_sent' : 'repair_sent', $issue, $u);
             out(['ok' => true, 'issue' => shapeIssue($issue)]);
         }
 
@@ -622,15 +645,57 @@ try {
             out(['ok' => true]);
         }
 
+        case 'damage.decide': {
+            // An Admin approves damage (all or fewer than reported) or rejects it with a reason.
+            $u = requireAdmin();
+            $b = body();
+            $i = issueRow(idOrNull($b['id'] ?? null) ?? 0);
+            $approve = ($b['decision'] ?? '') === 'approve';
+            $note = str($b['note'] ?? '', 500);
+            if ($i['kind'] !== 'damage' || $i['status'] !== 'pending') {
+                fail('This damage entry has already been decided.');
+            }
+            if (!$approve && $note === '') {
+                fail('Give a reason for rejecting.');
+            }
+            db()->beginTransaction();
+            lockHostel((int) $i['hostel_id']);
+            $i = issueRow((int) $i['id']);
+            if ($i['status'] !== 'pending') {
+                db()->rollBack();
+                fail('This damage entry has already been decided.');
+            }
+            $qty = 0;
+            if ($approve) {
+                $qty = int0($b['qty'] ?? $i['qty']);
+                if ($qty <= 0 || $qty > (int) $i['qty']) {
+                    db()->rollBack();
+                    fail('Approved quantity must be between 1 and ' . (int) $i['qty'] . '.');
+                }
+                $avail = onHand((int) $i['hostel_id'], (int) $i['item_id']) - pendingOut((int) $i['hostel_id'], (int) $i['item_id'], (int) $i['id']);
+                if ($qty > $avail) {
+                    db()->rollBack();
+                    fail("The hostel now has only $avail in stock, so $qty can't be written off.");
+                }
+                addTxn(['hostel_id' => (int) $i['hostel_id'], 'item_id' => (int) $i['item_id'], 'kind' => 'damaged', 'dir' => -1, 'qty' => $qty,
+                    'issue_id' => (int) $i['id'], 'party' => $i['place'], 'at' => today(), 'notes' => $i['notes']], $u);
+            }
+            q("UPDATE ha_issues SET status=?, received_qty=?, decided_by=?, decided_at=?, decision_note=? WHERE id=?",
+                [$approve ? 'done' : 'rejected', $approve ? $qty : 0, $u['id'], nowMs(), $note, $i['id']]);
+            db()->commit();
+            notifyIssue($approve ? 'damage_approved' : 'damage_rejected', issueRow((int) $i['id']), $u);
+            out(['ok' => true]);
+        }
+
         case 'issue.cancel': {
-            // The sending hostel withdraws a transfer the other hostel hasn't updated yet.
+            // The sending hostel withdraws a transfer not yet received, or damage not yet approved.
             $u = requireUser();
             $i = issueRow(idOrNull(body()['id'] ?? null) ?? 0);
-            if ($i['kind'] !== 'transfer' || $i['status'] !== 'pending') {
-                fail('Only a transfer waiting for approval can be cancelled.');
+            if (!in_array($i['kind'], ['transfer', 'damage'], true) || $i['status'] !== 'pending') {
+                fail('Only a transfer or damage entry that is still waiting can be cancelled.');
             }
             if (!canHostel($u, (int) $i['hostel_id'])) {
-                fail('Only the sending hostel can cancel this transfer.', 403, 'forbidden');
+                fail('Only the hostel that entered this can cancel it.', 403, 'forbidden');
             }
             q("UPDATE ha_issues SET status='cancelled', decided_by=?, decided_at=? WHERE id=? AND status='pending'", [$u['id'], nowMs(), $i['id']]);
             out(['ok' => true]);
@@ -680,15 +745,21 @@ try {
             if ($ok > 0) {
                 addTxn($base + ['kind' => 'repair_return', 'dir' => 1, 'qty' => $ok, 'party' => $i['place'], 'notes' => $notes], $u);
             }
+            $dmg = null;
             if ($scrap > 0) {
-                // Comes back on the books from repair, then goes out as damaged, so every column still adds up.
+                // They come back on the books from repair, then are written off as damage, which an Admin
+                // approves (approved at once when an Admin records it), so every column still adds up.
                 addTxn($base + ['kind' => 'repair_return', 'dir' => 1, 'qty' => $scrap, 'party' => $i['place'], 'notes' => 'Not repairable' . ($notes ? " — $notes" : '')], $u);
-                addTxn($base + ['kind' => 'damaged', 'dir' => -1, 'qty' => $scrap, 'party' => str($b['place'] ?? '', 160), 'notes' => 'Not repairable after repair ' . issueNo($i) . ($notes ? " — $notes" : '')], $u);
+                $dmg = recordDamage($u, (int) $i['hostel_id'], (int) $i['item_id'], $scrap, str($b['place'] ?? '', 160), $at,
+                    'Not repairable after repair ' . issueNo($i) . ($notes ? " — $notes" : ''));
             }
             $left = $outstanding - $ok - $scrap;
             q("UPDATE ha_issues SET returned_qty = returned_qty + ?, scrapped_qty = scrapped_qty + ?, status = ? WHERE id = ?", [$ok, $scrap, $left === 0 ? 'closed' : 'partly_returned', $i['id']]);
             db()->commit();
             notifyIssue('repair_returned', issueRow((int) $i['id']), $u, ['ok' => $ok, 'scrap' => $scrap]);
+            if ($dmg && $dmg['status'] === 'pending') {
+                notifyIssue('damage_reported', $dmg, $u);
+            }
             out(['ok' => true]);
         }
 

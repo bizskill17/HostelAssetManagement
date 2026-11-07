@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 function ensureSchema(PDO $db): void
 {
@@ -115,6 +115,9 @@ function ensureSchema(PDO $db): void
     }
     // v3: every unit already used by an item is in the units list.
     $db->exec("INSERT IGNORE INTO ha_units (name) SELECT DISTINCT unit FROM ha_items WHERE unit <> ''");
+
+    // v4: damage carries the approved quantity; older entries were approved in full.
+    $db->exec("UPDATE ha_issues SET received_qty = qty WHERE kind = 'damage' AND status = 'done' AND received_qty IS NULL");
 
     $db->prepare("REPLACE INTO ha_meta (k, v) VALUES ('schema', ?)")->execute([(string) SCHEMA_VERSION]);
 }
