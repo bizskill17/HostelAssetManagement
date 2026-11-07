@@ -638,7 +638,7 @@ V.warranties = () => {
     .filter((w) => match(f.q, w.title, w.itemId ? iName(w.itemId) : "", w.warrantyNo, w.supplier, w.notes, w.hostelId ? hName(w.hostelId) : ""))
     .sort((a, b) => a.daysLeft - b.daysLeft);
   const cols = [
-    { h: "Covers", t: (w) => w.title || iName(w.itemId), html: (w) => `<b>${esc(w.title || iName(w.itemId))}</b>${w.title && w.itemId ? `<div class="dim" style="font-size:12px">${esc(iName(w.itemId))}</div>` : ""}` },
+    { h: "Item", t: (w) => w.title || iName(w.itemId), html: (w) => `<b>${esc(w.title || iName(w.itemId))}</b>${w.title && w.itemId ? `<div class="dim" style="font-size:12px">${esc(iName(w.itemId))}</div>` : ""}` },
     { h: "Category", t: (w) => (M.C.get(w.categoryId) || {}).name || "", cls: "dim nw" },
     { h: "Hostel", t: (w) => (w.hostelId ? hName(w.hostelId) : "All hostels"), cls: "nw" },
     { h: "Warranty no.", t: (w) => w.warrantyNo || "", html: (w) => `<span class="mono">${esc(w.warrantyNo || "")}</span>` },
@@ -1035,9 +1035,8 @@ function warrantyForm(id) {
     title: w ? "Edit warranty" : "Add warranty", sub: "Track what's covered and when it expires",
     values: w ? { ...w, hostelId: w.hostelId ? String(w.hostelId) : "", categoryId: w.categoryId ? String(w.categoryId) : "", itemId: w.itemId ? String(w.itemId) : "", qty: w.qty ?? "", startAt: w.startAt || "" } : null,
     fields: [
-      { k: "itemId", l: "Item", type: "select", blank: "— Choose item (optional) —", opts: () => groupedItems(S.d.items), half: 1 },
+      { k: "itemId", l: "Item", type: "select", blank: "— Choose item —", req: 1, opts: () => groupedItems(S.d.items), half: 1 },
       { k: "categoryId", l: "Category", type: "select", blank: "— Choose —", opts: () => catOpts(), half: 1, add: ADD_CATEGORY },
-      { k: "title", l: "What it covers", ph: "e.g. Ceiling fans — Crompton", help: "Leave blank to use the item name." },
       { k: "hostelId", l: "Hostel", type: "select", blank: "All hostels", opts: () => S.d.hostels.map((h) => [h.id, h.name]), show: () => M.admin, half: 1, val: "" },
       { k: "qty", l: "Quantity covered", type: "number", half: 1 },
       { k: "warrantyNo", l: "Warranty / AMC number", half: 1 },

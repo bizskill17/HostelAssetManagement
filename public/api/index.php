@@ -704,8 +704,14 @@ try {
             }
             $title = str($b['title'] ?? '', 160);
             $iid = idOrNull($b['itemId'] ?? null);
-            if ($title === '' && !$iid) {
-                fail('Choose an item or describe what the warranty covers.');
+            if (!$iid && !$id) {
+                fail('Choose an item.');
+            }
+            if ($id && !$iid && $title === '') {
+                $title = (string) ($w['title'] ?? '');
+                if ($title === '') {
+                    fail('Choose an item.');
+                }
             }
             $qty = ($b['qty'] ?? '') === '' || $b['qty'] === null ? null : max(0, int0($b['qty']));
             $vals = [$hid, idOrNull($b['categoryId'] ?? null), $iid, $title, str($b['warrantyNo'] ?? '', 80), str($b['supplier'] ?? '', 160), $qty,
