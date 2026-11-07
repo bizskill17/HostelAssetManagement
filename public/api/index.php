@@ -532,6 +532,15 @@ try {
             if ($qty <= 0) {
                 fail('Enter a quantity greater than 0.');
             }
+            if ($kind === 'repair' && $place === '') {
+                fail('Enter who the items are sent to for repair.');
+            }
+            if ($kind === 'repair' && !dateOr($b['expectedAt'] ?? '', null)) {
+                fail('Enter the expected return date.');
+            }
+            if ($kind === 'damage' && $place === '') {
+                fail('Choose where the damaged items are sent.');
+            }
             if ($kind === 'transfer') {
                 $toRow = hostelRow($to);
                 if (!$toRow || !(int) $toRow['active']) {
