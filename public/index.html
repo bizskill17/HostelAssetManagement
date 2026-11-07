@@ -302,22 +302,14 @@ tfoot td{background:#f8f9fc;font-weight:700;border-top:1px solid var(--line)}
   .toast{bottom:92px}
 }
 
-@media (max-width:700px){
-  .tw table,.tw tbody,.tw tfoot,.tw tr,.tw td{display:block;width:100%}
-  .tw thead{display:none}
-  .sortbar{display:flex}
-  .tw tbody tr{padding:10px 14px;border-bottom:1px solid var(--line)}
-  .tw tbody tr:last-child{border-bottom:0}
-  .tw td{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:4px 0;border:0!important;text-align:right;min-height:26px}
-  .tw td::before{content:attr(data-l);color:var(--muted);font-size:12px;font-weight:500;text-align:left;flex:none}
-  .tw td:empty,.tw td.nofoot,.tw td:has(>span:empty){display:none}
-  .tw td:first-child{font-weight:700;font-size:14.5px;padding-bottom:6px}
-  .tw td.wrap{max-width:none;min-width:0;text-align:right}
-  .tw td.acts-td{padding-top:8px}.tw td.acts-td::before{display:none}
-  .tw td.acts-td>span,.tw td.acts-td .rowacts{width:100%;justify-content:flex-end}
-  .tw td.acts-td:has(.rowacts:empty){display:none}
-  .tw tbody tr:hover td{background:transparent}
-  .tw tfoot tr{padding:10px 14px;background:#f8f9fc}.tw tfoot td{background:transparent;border:0}
+/* phones and tablets: real tables that scroll sideways; cell text stays on one line */
+@media (max-width:900px){
+  .tw{-webkit-overflow-scrolling:touch}
+  .tw th,.tw td{white-space:nowrap}
+  .tw td.wrap{white-space:normal;min-width:200px;max-width:280px}
+  .tw td .rowacts{flex-wrap:nowrap}
+  .tw td .rowacts .btn.sm{white-space:nowrap}
+  .tw table{font-size:13px}
 }
 </style>
 </head>
