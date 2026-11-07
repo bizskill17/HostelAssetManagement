@@ -1218,7 +1218,12 @@ document.addEventListener("keydown", (e) => {
   e.preventDefault();
 }, true);
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && document.querySelector(".dlg.mini")) { document.querySelector(".dlg.mini").remove(); return; } if (e.key === "Escape") { S.hist = null; closeDlg(); document.body.classList.remove("drawer"); } });
-$("#menuBtn").addEventListener("click", () => document.body.classList.toggle("drawer"));
+// Desktop: hide or show the left menu (remembered in this browser). Phones: open the slide-out menu.
+const desktop = () => window.innerWidth > 900;
+const setNavHidden = (hide) => { document.body.classList.toggle("navhidden", hide); try { localStorage.setItem("ham_navhidden", hide ? "1" : "0"); } catch (_) {} };
+try { if (localStorage.getItem("ham_navhidden") === "1") document.body.classList.add("navhidden"); } catch (_) {}
+$("#menuBtn").addEventListener("click", () => (desktop() ? setNavHidden(false) : document.body.classList.toggle("drawer")));
+$("#hideNav").addEventListener("click", () => setNavHidden(true));
 window.addEventListener("hashchange", route);
 
 /* ---------- toast ---------- */
