@@ -538,7 +538,7 @@ V.issues = () => {
 const APPROVAL_VIEWS = {
   receive: { show: "in", title: "Incoming transfers", empty: "No incoming transfers waiting to be received.", csv: "incoming-transfers" },
   sent: { show: "out", title: "Outgoing transfers", empty: "No outgoing transfers waiting to be received.", csv: "outgoing-transfers" },
-  transfers: { show: "all", title: "All transfers", empty: "No transfers yet.", csv: "transfers-all" },
+  transfers: { show: "all", title: "All Transfers", empty: "No transfers yet.", csv: "transfers-all" },
   transfer: { show: "pending", title: "Transfer", empty: "No transfers waiting to be received.", csv: "transfers-pending" },
 };
 function approvalsView(key) {
@@ -580,9 +580,8 @@ Object.keys(APPROVAL_VIEWS).forEach((k) => (V[k] = () => approvalsView(k)));
 /* ---------- damage approval ---------- */
 V.damage = () => {
   const f = fv("damage");
-  if (f.st === undefined) f.st = "pending";
-  const rows = S.d.issues.filter((i) => i.kind === "damage")
-    .filter((i) => (!f.st || i.status === f.st) && (!f.h || i.hostelId === +f.h) && inRange(i.at, f))
+  const rows = M.dmgPending
+    .filter((i) => (!f.h || i.hostelId === +f.h) && inRange(i.at, f))
     .filter((i) => match(f.q, i.no, iName(i.itemId), hName(i.hostelId), i.place, i.notes, i.decisionNote));
   const cols = [
     { h: "No.", t: (i) => i.no, html: (i) => `<span class="mono">${esc(i.no)}</span>`, cls: "nw" },
@@ -602,11 +601,10 @@ V.damage = () => {
   return head("Damage", "", `${csvBtn("damage")}<button class="btn pri" data-act="issue" data-kind="damage">${ic("alert")}<span class="l">Mark damaged</span></button>`)
     + filterBar("damage", [
       { k: "q", type: "search", ph: "Search no., item, hostel or notes" },
-      { k: "st", l: "Status", opts: [["pending", "Awaiting approval"], ["done", "Approved"], ["rejected", "Rejected"], ["cancelled", "Cancelled"]], all: "All statuses" },
       { k: "h", l: "Hostel", opts: hostelOpts(), all: "All hostels", hide: !M.admin },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
     ])
-    + table("damage", cols, rows, { csv: "damage-approvals", emptyIcon: "alert", empty: f.st === "pending" ? "No damage waiting for approval." : "No damage entries to show." });
+    + table("damage", cols, rows, { csv: "damage-approvals", emptyIcon: "alert", empty: "No damage waiting for approval." });
 };
 function damageDecideForm(id, approve) {
   const i = S.d.issues.find((x) => x.id === id);
@@ -634,9 +632,10 @@ function damageDecideForm(id, approve) {
 }
 
 /* ---------- repairs ---------- */
-V.repairs = () => {
-  const f = fv("repairs");
-  const st = f.st ?? "open";
+// Approvals Pending → Repair shows open jobs only; Operations → All Repairs shows everything.
+function repairsView(key, pendingOnly) {
+  const f = fv(key);
+  const st = pendingOnly ? f.st || "open" : f.st ?? "";
   const rows = S.d.issues.filter((i) => i.kind === "repair" && i.status !== "void")
     .filter((i) => st === "" || (st === "open" ? outstanding(i) > 0 && i.status !== "closed" : st === "overdue" ? isOverdue(i) : i.status === "closed"))
     .filter((i) => (!f.h || i.hostelId === +f.h) && inRange(i.at, f) && match(f.q, i.no, iName(i.itemId), hName(i.hostelId), i.place, i.notes));
@@ -657,22 +656,25 @@ V.repairs = () => {
     { h: "Notes", t: (i) => i.notes || "", cls: "wrap" },
     { h: "", t: () => "", nocsv: 1, nosort: 1, html: issueActs },
   ];
-  return head("Repair", "Items sent for repair and their return", `${csvBtn("repairs")}<button class="btn pri" data-act="issue" data-kind="repair">${ic("wrench")}<span class="l">Send for repair</span></button>`)
+  return head(pendingOnly ? "Repair" : "All Repairs", "", `${csvBtn(key)}<button class="btn pri" data-act="issue" data-kind="repair">${ic("wrench")}<span class="l">Send for repair</span></button>`)
     + stats([
       { v: nf(open.reduce((s, i) => s + outstanding(i), 0)), l: "Quantity at repair now", tone: "amber" },
       { v: nf(open.length), l: "Open repair jobs", tone: "cyan" },
-      { v: nf(open.filter(isOverdue).length), l: "Overdue", tone: "red", go: "repairs?overdue" },
+      { v: nf(open.filter(isOverdue).length), l: "Overdue", tone: "red", go: key + "?overdue" },
       { v: nf(rows.reduce((s, i) => s + i.returnedQty, 0)), l: "Returned (shown)", tone: "green" },
       { v: nf(rows.reduce((s, i) => s + i.scrappedQty, 0)), l: "Not repairable (shown)", tone: "slate" },
     ])
-    + filterBar("repairs", [
+    + filterBar(key, [
       { k: "q", type: "search", ph: "Search no., item, repairer or notes" },
-      { k: "st", l: "Status", opts: [["open", "Still at repair"], ["overdue", "Overdue"], ["closed", "Closed"]], all: "All repairs" },
+      pendingOnly ? { k: "st", l: "Status", opts: [["overdue", "Overdue only"]], all: "Still at repair" }
+        : { k: "st", l: "Status", opts: [["open", "Still at repair"], ["overdue", "Overdue"], ["closed", "Closed"]], all: "All repairs" },
       { k: "h", l: "Hostel", opts: hostelOpts(), all: "All hostels", hide: !M.admin },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
     ])
-    + table("repairs", cols, rows, { csv: "repairs", emptyIcon: "wrench", empty: st === "open" ? "Nothing is at repair right now." : "No repairs to show." });
-};
+    + table(key, cols, rows, { csv: pendingOnly ? "repairs-pending" : "repairs-all", emptyIcon: "wrench", empty: st === "open" ? "Nothing is at repair right now." : "No repairs to show." });
+}
+V.repairs = () => repairsView("repairs", true);
+V.allrepairs = () => repairsView("allrepairs", false);
 
 /* ---------- damaged ---------- */
 V.damaged = () => {
@@ -696,7 +698,7 @@ V.damaged = () => {
     { h: "Notes", t: (t) => t.notes || "", cls: "wrap" },
     { h: "Entered by", t: (t) => uName(t.createdBy), cls: "dim nw" },
   ];
-  return head("Damaged", "Items written off as damaged, including those not repairable", `${csvBtn("damaged")}<button class="btn pri" data-act="issue" data-kind="damage">${ic("alert")}<span class="l">Mark damaged</span></button>`)
+  return head("All Damaged", "Items written off as damaged, including those not repairable", `${csvBtn("damaged")}<button class="btn pri" data-act="issue" data-kind="damage">${ic("alert")}<span class="l">Mark damaged</span></button>`)
     + stats([
       { v: nf(rows.length), l: "Entries" },
       { v: nf(rows.reduce((s, t) => s + t.qty, 0)), l: "Quantity damaged", tone: "red" },
@@ -1207,18 +1209,18 @@ async function saveSettings(quiet) { await api("settings.save", settingsVals());
 /* =================================================================== shell */
 const NAV = [
   { g: "Overview" }, { v: "home", l: "Dashboard", i: "home" }, { v: "inventory", l: "Inventory", i: "box" },
-  { g: "Movements" }, { v: "stock", l: "Stock in", i: "in" }, { v: "issues", l: "Issue register", i: "send" },
-{ v: "damaged", l: "Damaged", i: "alert" },
-  { g: "Approvals" }, { v: "transfer", l: "Transfer", i: "move", n: () => M.incoming.length, hot: 1 },
+  { g: "Operations" }, { v: "stock", l: "Stock in", i: "in" }, { v: "issues", l: "Issue register", i: "send" },
+  { v: "damaged", l: "All Damaged", i: "alert" }, { v: "transfers", l: "All Transfers", i: "move" }, { v: "allrepairs", l: "All Repairs", i: "wrench" },
+  { g: "Approvals Pending" }, { v: "transfer", l: "Transfer", i: "move", n: () => M.incoming.length, hot: 1 },
   { v: "damage", l: "Damage", i: "alert", n: () => M.dmgPending.length, hot: 1 },
-  { v: "repairs", l: "Repair", i: "wrench", n: () => M.openRepairs.length }, { v: "transfers", l: "All transfers", i: "list" },
+  { v: "repairs", l: "Repair", i: "wrench", n: () => M.openRepairs.length },
   { g: "Records" }, { v: "warranties", l: "Warranties", i: "shield", n: () => M.exp30, hot: 1 },
   { g: "Masters", admin: 1 }, { v: "hostels", l: "Hostels", i: "building", admin: 1 }, { v: "items", l: "Items", i: "tag", admin: 1 }, { v: "categories", l: "Categories", i: "folder", admin: 1 }, { v: "units", l: "Units", i: "box", admin: 1 },
   { v: "places", l: "Damage destinations", i: "trash", admin: 1 }, { v: "users", l: "Users", i: "users", admin: 1 }, { v: "settings", l: "Settings", i: "settings", admin: 1 },
 ];
 function renderShell() {
   // Each menu section sits on its own soft colour block.
-  const SEC_TONE = { Overview: "blue", Movements: "teal", Approvals: "amber", Records: "violet", Masters: "slate" };
+  const SEC_TONE = { Overview: "blue", Operations: "teal", "Approvals Pending": "amber", Records: "violet", Masters: "slate" };
   let html = "", open = false;
   for (const n of NAV.filter((x) => !x.admin || M.admin)) {
     if (n.g) {
@@ -1259,7 +1261,7 @@ function route() {
   const [v, arg] = h.split("?");
   const nav = NAV.find((n) => n.v === v);
   S.view = nav && (!nav.admin || M.admin) ? v : "home";
-  if (arg && S.view === "repairs") S.f.repairs = { st: arg };
+  if (arg && (S.view === "repairs" || S.view === "allrepairs")) S.f[S.view] = { st: arg };
   if (arg && S.view === "warranties") S.f.warranties = { st: arg };
   if (arg) history.replaceState(null, "", "#" + S.view);
   document.body.classList.remove("drawer");
