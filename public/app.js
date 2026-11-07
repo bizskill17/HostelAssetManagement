@@ -933,7 +933,7 @@ function stockForm() {
   if (!hs.length) return toast("Add a hostel first.", true);
   const hasOpening = (h, i) => S.d.txns.some((t) => t.kind === "opening" && t.hostelId === +h && t.itemId === +i);
   openForm({
-    title: "Add stock", sub: "Opening stock, or new items received at a hostel",
+    title: "Add stock",
     fields: [
       { k: "kind", l: "Type", type: "seg", opts: () => [["in", "Received", "in"], ["opening", "Opening stock", "box"]], val: "in" },
       { k: "hostelId", l: "Hostel", type: "select", opts: () => hs, val: String(M.admin ? hs[0][0] : M.myH), show: () => M.admin, req: 1 },
