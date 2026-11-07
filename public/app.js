@@ -220,7 +220,7 @@ function downloadCSV(key) {
 /* ---------- page pieces ---------- */
 // Page title with its buttons. Pages carry no tagline under the title.
 const head = (title, _sub, acts = "") => `<div class="ph"><div><h1>${esc(title)}</h1></div><div class="acts">${acts}</div></div>`;
-const csvBtn = (key) => `<button class="btn" data-act="csv" data-key="${key}">${ic("download")}<span class="l">Download CSV</span></button>`;
+const csvBtn = (key) => `<button class="btn dl" data-act="csv" data-key="${key}" title="Download as CSV">${ic("download")}<span class="l">Download</span></button>`;
 // Count cards appear only on the Dashboard.
 const stats = (list, onDashboard) => !onDashboard ? "" : `<div class="stats">${list.map((s) => `<div class="stat t-${s.tone || "brand"}${s.go ? " click" : ""}" ${s.go ? `data-go="${s.go}"` : ""}><div class="l">${esc(s.l)}</div><div class="v">${esc(s.v)}</div></div>`).join("")}</div>`;
 const scopeText = () => (M.admin ? `All ${S.d.hostels.length} hostels` : hName(M.myH));
@@ -422,7 +422,7 @@ function drawHist() {
       <div class="filters">${hostelSel}<label class="flab">From<input type="date" data-hist="from" value="${esc(f.from || "")}"></label><label class="flab">To<input type="date" data-hist="to" value="${esc(f.to || "")}"></label><div class="search">${ic("search")}<input class="inp" data-hist="q" value="${esc(f.q || "")}" placeholder="Search entries"></div></div>
       ${table("hist", m.cols, m.shown, { csv: `history-${(it.name || "item").replace(/\W+/g, "-")}${hid ? "-" + hName(hid).replace(/\W+/g, "-") : ""}`, all: 1, empty: "No entries for this item yet." })}
     </div>
-    <div class="df"><button class="btn" data-act="csv" data-key="hist">${ic("download")}Download CSV</button><button class="btn pri" data-act="closehist">Close</button></div>`;
+    <div class="df"><button class="btn dl" data-act="csv" data-key="hist" title="Download as CSV">${ic("download")}Download</button><button class="btn pri" data-act="closehist">Close</button></div>`;
   if (keep) { const el = box.querySelector(`[data-hist="${keep}"]`); if (el) { el.focus(); if (el.type !== "date") { const n = el.value.length; try { el.setSelectionRange(n, n); } catch (_) {} } } }
 }
 
