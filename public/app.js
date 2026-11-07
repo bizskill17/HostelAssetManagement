@@ -38,6 +38,7 @@ const P = {
   menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
   list: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/>',
   chev: '<path d="m6 9 6 6 6-6"/>',
+  filter: '<path d="M4 6h16"/><path d="M7 12h10"/><path d="M10 18h4"/>',
   move: '<path d="M17 3l4 4-4 4"/><path d="M3 7h18"/><path d="M7 21l-4-4 4-4"/><path d="M21 17H3"/>',
   undo: '<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>',
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
@@ -144,17 +145,32 @@ const isOverdue = (i) => i.expectedAt && i.expectedAt < today() && outstanding(i
 
 /* ---------- filters ---------- */
 function fv(key) { return (S.f[key] = S.f[key] || {}); }
+/* Filter bar: the search box, then the other filters. On phones and tablets the other filters sit
+   behind a filter icon beside the search box; applied filters show as chips while it is closed. */
+S.fopen = {};
 function filterBar(key, defs) {
   const f = fv(key);
-  const parts = defs.map((d) => {
-    if (d.hide) return "";
+  const ctl = (d) => {
     const v = f[d.k] ?? "";
     if (d.type === "search") return `<div class="search">${ic("search")}<input class="inp" data-fkey="${key}" data-f="${d.k}" value="${esc(v)}" placeholder="${esc(d.ph || "Search")}" autocomplete="off"></div>`;
     if (d.type === "date") return `<label class="flab">${esc(d.l)}<input type="date" data-fkey="${key}" data-f="${d.k}" value="${esc(v)}"></label>`;
     return `<select data-fkey="${key}" data-f="${d.k}" aria-label="${esc(d.l || "")}">${d.all !== false ? `<option value="">${esc(d.all || "All")}</option>` : ""}${d.opts.map(([ov, ol]) => `<option value="${esc(ov)}"${String(ov) === String(v) ? " selected" : ""}>${esc(ol)}</option>`).join("")}</select>`;
-  }).join("");
+  };
+  const shown = defs.filter((d) => !d.hide);
+  const search = shown.find((d) => d.type === "search");
+  const rest = shown.filter((d) => d !== search);
+  const active = rest.filter((d) => f[d.k] !== "" && f[d.k] != null);
   const any = Object.values(f).some((x) => x !== "" && x != null);
-  return `<div class="filters">${parts}${any ? `<button class="clear" data-act="clearf" data-key="${key}">Clear</button>` : ""}</div>`;
+  const open = !!S.fopen[key];
+  const label = (d) => {
+    const v = f[d.k];
+    if (d.type === "date") return `${d.l} ${fmtD(v)}`;
+    const o = (d.opts || []).find(([ov]) => String(ov) === String(v));
+    return o ? o[1] : String(v);
+  };
+  const toggle = rest.length ? `<button type="button" class="fbtn${open || active.length ? " on" : ""}" data-act="ftoggle" data-key="${key}" aria-expanded="${open}" aria-label="Filters" title="Filters">${ic("filter")}${active.length ? `<span class="fcount">${active.length}</span>` : ""}</button>` : "";
+  const chips = active.length && !open ? `<div class="fchips">${active.map((d) => `<span class="fchip">${esc(label(d))}<button type="button" data-act="fchip" data-key="${key}" data-k="${d.k}" aria-label="Remove filter">${ic("x")}</button></span>`).join("")}</div>` : "";
+  return `<div class="filters${open ? " fopen" : ""}">${search ? `<div class="srow">${ctl(search)}${toggle}</div>` : toggle}<div class="fpanel">${rest.map(ctl).join("")}${any ? `<button class="clear" data-act="clearf" data-key="${key}">Clear all</button>` : ""}</div>${chips}</div>`;
 }
 const hostelOpts = () => S.d.hostels.filter((h) => M.scopeH.includes(h.id)).map((h) => [h.id, h.name]);
 const catOpts = () => S.d.categories.map((c) => [c.id, c.name]);
@@ -1068,6 +1084,8 @@ const ACT = {
   issue: (el) => issueForm(el.dataset.kind || "transfer"),
   stockin: () => stockForm(),
   csv: (el) => downloadCSV(el.dataset.key),
+  ftoggle: (el) => { S.fopen[el.dataset.key] = !S.fopen[el.dataset.key]; render(); },
+  fchip: (el) => { fv(el.dataset.key)[el.dataset.k] = ""; S.page[el.dataset.key] = 0; render(); },
   sortdir: (el) => { const st = S.sort[el.dataset.key]; if (st) st.dir = -st.dir; if (el.dataset.key === "hist") drawHist(); else render(); },
   page: (el) => { S.page[el.dataset.key] = +el.dataset.p; render(); window.scrollTo({ top: 0, behavior: "smooth" }); },
   clearf: (el) => { S.f[el.dataset.key] = {}; S.page[el.dataset.key] = 0; render(); },
