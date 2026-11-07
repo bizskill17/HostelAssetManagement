@@ -39,7 +39,9 @@ session_set_cookie_params([
     'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
 ]);
 session_name('ham_sess');
-session_start();
+if (!defined('CRON_CLI')) {
+    session_start();
+}
 
 function db(): PDO
 {
@@ -329,7 +331,7 @@ try {
                     'telegramTokenSet' => ($s['telegram_token'] ?? '') !== '', 'appUrl' => $s['app_url'] ?? '',
                     'tgOff' => array_values(array_filter(explode(',', $s['tg_off'] ?? ''))), 'dailyTime' => $s['daily_time'] ?? '09:00',
                     'tgEvents' => TG_EVENTS, 'lastDaily' => $s['last_daily'] ?? '',
-                    'cronUrl' => rtrim(($s['app_url'] ?? '') !== '' ? $s['app_url'] : 'https://' . ($_SERVER['HTTP_HOST'] ?? 'localhost'), '/') . '/api/?a=cron&key=' . cronKey(),
+                    'cronCmd' => 'php ' . __DIR__ . '/cron.php', 'cronUrl' => rtrim(($s['app_url'] ?? '') !== '' ? $s['app_url'] : 'https://' . ($_SERVER['HTTP_HOST'] ?? 'localhost'), '/') . '/api/?a=cron&key=' . cronKey(),
                 ];
             }
             $res['today'] = today();
@@ -879,7 +881,7 @@ try {
         case 'cron': {
             // Called once a day (or more often) by a Hostinger cron job; sends the daily messages once.
             $key = (string) ($_GET['key'] ?? '');
-            if ($key === '' || !hash_equals(cronKey(), $key)) {
+            if (!defined('CRON_CLI') && ($key === '' || !hash_equals(cronKey(), $key))) {
                 fail('Not allowed.', 403, 'forbidden');
             }
             out(runDaily());
