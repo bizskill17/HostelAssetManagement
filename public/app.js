@@ -958,7 +958,7 @@ function issueForm(kind = "transfer") {
   const startH = M.admin ? hs[0][0] : M.myH;
   const itemsFor = (h) => S.d.items.filter((i) => available(+h, i.id) > 0);
   openForm({
-    title: "Issue asset", sub: "Transfer to another hostel, send for repair, or mark as damaged",
+    title: "Issue asset",
     fields: [
       { k: "kind", l: "What is happening?", type: "seg", opts: () => [["transfer", "Transfer", "move"], ["repair", "Repair", "wrench"], ["damage", "Damaged", "alert"]], val: kind },
       { k: "hostelId", l: "From hostel", type: "select", opts: () => hs, val: String(startH), show: () => M.admin },
@@ -968,8 +968,7 @@ function issueForm(kind = "transfer") {
         help: (v) => (v.qty && v.itemId && +v.qty > available(+v.hostelId, +v.itemId) ? { t: "More than available", c: "warn" } : "") },
       { k: "at", l: "Date", type: "date", val: today(), half: 1 },
       { k: "toHostelId", l: "To hostel", type: "select", blank: "— Choose hostel —", req: 1, show: (v) => v.kind === "transfer",
-        opts: (v) => S.d.hostels.filter((h) => h.active && h.id !== +v.hostelId).map((h) => [h.id, h.name]),
-        help: "The receiving hostel will see this under Approvals → Transfer, with an Update button. Stock moves when they update the quantity received." },
+        opts: (v) => S.d.hostels.filter((h) => h.active && h.id !== +v.hostelId).map((h) => [h.id, h.name]) },
       { k: "place", l: "Sent to (repairer)", ph: "e.g. Sharma Electricals", show: (v) => v.kind === "repair", half: 1, list: [...new Set(S.d.issues.filter((i) => i.kind === "repair" && i.place).map((i) => i.place))] },
       { k: "expectedAt", l: "Expected back", type: "date", show: (v) => v.kind === "repair", half: 1 },
       { k: "dplace", l: "Sent to after damage (optional)", type: "select", blank: "— Not sent anywhere —", show: (v) => v.kind === "damage", opts: () => S.d.damagePlaces.map((p) => [p.name, p.name]) },
