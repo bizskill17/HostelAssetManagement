@@ -1128,11 +1128,20 @@ const NAV = [
   { v: "places", l: "Damage destinations", i: "trash", admin: 1 }, { v: "users", l: "Users", i: "users", admin: 1 }, { v: "settings", l: "Settings", i: "settings", admin: 1 },
 ];
 function renderShell() {
-  $("#nav").innerHTML = NAV.filter((n) => !n.admin || M.admin).map((n) => {
-    if (n.g) return `<h6>${esc(n.g)}</h6>`;
+  // Each menu section sits on its own soft colour block.
+  const SEC_TONE = { Overview: "blue", Movements: "teal", Approvals: "amber", Records: "violet", Masters: "slate" };
+  let html = "", open = false;
+  for (const n of NAV.filter((x) => !x.admin || M.admin)) {
+    if (n.g) {
+      if (open) html += "</div>";
+      html += `<div class="sec sec-${SEC_TONE[n.g] || "slate"}"><h6>${esc(n.g)}</h6>`;
+      open = true;
+      continue;
+    }
     const c = n.n ? n.n() : 0;
-    return `<a href="#${n.v}" class="${S.view === n.v ? "on" : ""}">${ic(n.i)}${esc(n.l)}${c ? `<span class="n${n.hot ? " hot" : ""}">${nf(c)}</span>` : ""}</a>`;
-  }).join("");
+    html += `<a href="#${n.v}" class="${S.view === n.v ? "on" : ""}">${ic(n.i)}${esc(n.l)}${c ? `<span class="n${n.hot ? " hot" : ""}">${nf(c)}</span>` : ""}</a>`;
+  }
+  $("#nav").innerHTML = html + (open ? "</div>" : "");
   $("#meBox").innerHTML = `<span class="av">${esc(initials(S.me.name))}</span><div class="t"><b>${esc(S.me.name)}</b><span>${esc(S.me.role)}${M.admin ? "" : " · " + esc(hName(M.myH))}</span></div><button class="iconbtn" title="Log out" data-act="logout">${ic("logout")}</button>`;
   $("#orgLine").textContent = M.admin ? `${S.d.hostels.length} hostels` : hName(M.myH);
   const inc = M.incoming.length;

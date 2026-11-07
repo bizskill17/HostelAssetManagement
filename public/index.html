@@ -36,12 +36,20 @@ svg.i{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-widt
 .brand b{font-family:var(--display);font-size:15.5px;line-height:1.15;display:block}
 .brand span{font-size:12px;color:var(--muted)}
 .nav{flex:1;overflow-y:auto;padding:4px 10px 12px}
-.nav h6{margin:16px 10px 6px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8a93ab;font-weight:600}
-.nav a{display:flex;align-items:center;gap:11px;padding:8.5px 10px;border-radius:9px;color:var(--ink2);font-weight:500;margin-bottom:1px}
-.nav a:hover{background:var(--line2)}
-.nav a.on{background:var(--brand-s);color:var(--brand-d);font-weight:600}
-.nav a.on svg{color:var(--brand)}
-.nav a .n{margin-left:auto;font-size:11.5px;font-weight:600;min-width:22px;text-align:center;padding:1px 7px;border-radius:99px;background:var(--line2);color:var(--muted)}
+/* one soft colour block per menu section */
+.nav .sec{--tint:#eef1f6;--ink:#2c3344;--icon:#5b6478;background:var(--tint);border-radius:12px;padding:7px 6px 6px;margin-bottom:8px}
+.nav .sec-blue{--tint:#e8efff;--ink:#1f3a8a;--icon:#2f54eb}
+.nav .sec-teal{--tint:#e1f5ee;--ink:#085041;--icon:#0f8a66}
+.nav .sec-amber{--tint:#fdf1dc;--ink:#633806;--icon:#c47a0b}
+.nav .sec-violet{--tint:#efecfe;--ink:#3c3489;--icon:#6d3fd6}
+.nav .sec-slate{--tint:#eef0f4;--ink:#2c3344;--icon:#5b6478}
+.nav h6{margin:2px 8px 4px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);opacity:.85;font-weight:700}
+.nav a{display:flex;align-items:center;gap:10px;padding:7.5px 8px;border-radius:8px;color:var(--ink2);font-weight:500;margin-bottom:1px}
+.nav a svg{color:var(--icon)}
+.nav a:hover{background:rgba(255,255,255,.65)}
+.nav a.on{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(20,26,46,.08)}
+.nav a.on svg{color:var(--icon)}
+.nav a .n{margin-left:auto;font-size:11.5px;font-weight:600;min-width:22px;text-align:center;padding:1px 7px;border-radius:99px;background:rgba(20,26,46,.07);color:var(--ink)}
 .nav a .n.hot{background:var(--red);color:#fff}
 .me{border-top:1px solid var(--line);padding:12px 14px;display:flex;align-items:center;gap:10px}
 .av{width:34px;height:34px;border-radius:50%;background:var(--brand-s);color:var(--brand-d);display:grid;place-items:center;font-weight:700;font-size:12.5px;flex:none}
