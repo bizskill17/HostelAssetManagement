@@ -1305,6 +1305,9 @@ function render() {
   const keep = act && act.dataset && act.dataset.f ? { k: act.dataset.fkey, f: act.dataset.f, pos: act.selectionStart } : null;
   const fn = V[S.view] || V.home;
   $("#view").innerHTML = fn();
+  const ph = $("#view > .ph");
+  $("#topPage").textContent = ph ? $("h1", ph).textContent : "";
+  $("#topActs").innerHTML = ph ? $(".acts", ph).innerHTML : "";
   if (keep) {
     const el = document.querySelector(`[data-fkey="${keep.k}"][data-f="${keep.f}"]`);
     if (el) { el.focus(); try { el.setSelectionRange(keep.pos, keep.pos); } catch (_) {} }

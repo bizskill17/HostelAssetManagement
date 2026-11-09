@@ -60,6 +60,7 @@ svg.i{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-widt
 .iconbtn.del:hover{background:var(--red-s);color:var(--red)}
 .main{flex:1;min-width:0;padding:26px 30px 60px}
 .topbar{display:none}
+#topPage,.tacts{display:none}
 .brand .hidenav{margin-left:auto}
 /* desktop: menu hidden */
 @media (min-width:901px){
@@ -336,6 +337,12 @@ td .b{color:var(--ink2)}
   .main{padding:14px 14px 96px}
   .topbar{display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:20;background:rgba(244,246,251,.92);backdrop-filter:blur(8px);margin:-14px -14px 12px;padding:10px 12px;border-bottom:1px solid var(--line)}
   .topbar b{font-family:var(--display);font-size:16px;flex:1}
+  /* Mobile: the top bar shows the page title and the page's buttons; the page header row is hidden. */
+  #topTitle{display:none}
+  #topPage{display:block;font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .tacts{display:flex;gap:8px;flex:none}
+  .tacts .btn{height:38px;padding:0 11px}.tacts .btn span.l{display:none}
+  #view>.ph{display:none}
   .ph h1{font-size:21px}
   .ph .acts .btn span.l{display:none}
   .stats{grid-template-columns:repeat(2,1fr);gap:9px}
@@ -376,7 +383,7 @@ td .b{color:var(--ink2)}
   </aside>
   <div class="scrim" id="scrim"></div>
   <main class="main">
-    <div class="topbar"><button class="iconbtn" id="menuBtn" aria-label="Show menu" title="Show menu"><svg class="i" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><b id="topTitle">Dashboard</b></div>
+    <div class="topbar"><button class="iconbtn" id="menuBtn" aria-label="Show menu" title="Show menu"><svg class="i" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><b id="topTitle">Dashboard</b><b id="topPage"></b><div class="tacts" id="topActs"></div></div>
     <div id="view"></div>
   </main>
   <nav class="bnav" id="bnav"></nav>
