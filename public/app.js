@@ -361,7 +361,7 @@ V.inventory = () => {
     { h: "Damage pending", t: (r) => r.pendingDmg || "", num: 1, cls: "dim" },
     { h: "Transfer pending", t: (r) => (r.pendingOut ? `−${r.pendingOut}` : "") + (r.pendingOut && r.pendingIn ? " / " : "") + (r.pendingIn ? `+${r.pendingIn}` : ""), cls: "dim nw", nosort: 1 },
   ];
-  return head("Inventory", `${esc(combine ? "All hostels combined" : scopeText())} · click an item to see its history`, `${csvBtn("inventory")}<button class="btn pri" data-act="issue">${ic("send")}<span class="l">Issue asset</span></button>`)
+  return head("Inventory", `${esc(combine ? "All hostels combined" : scopeText())} · click an item to see its history`, `${csvBtn("inventory")}<button class="btn pri" data-act="issue">${ic("plus")}<span class="l">Issue asset</span></button>`)
     + stats([
       { v: nf(rows.length), l: combine ? "Items" : "Hostel × item lines" },
       { v: nf(sum("opening")), l: "Opening count", tone: "slate" },
@@ -545,7 +545,7 @@ const ab = (act, id, icon, title, tone, extra = "") => `<button type="button" cl
 function issueActs(i) {
   const b = [];
   if (i.kind === "transfer" && i.status === "pending") {
-    if (canWriteHostel(i.toHostelId)) b.push(ab("receive", i.id, "edit", "Update received qty", "blue"));
+    if (canWriteHostel(i.toHostelId)) b.push(ab("receive", i.id, "tick", "Update received qty", "blue"));
     if (canWriteHostel(i.hostelId)) b.push(ab("cancel", i.id, "x", "Cancel", "slate"));
   }
   if (i.kind === "damage" && i.status === "pending") {
@@ -567,7 +567,7 @@ V.issues = () => {
   const nb = (k) => base.filter((i) => !k || i.kind === k).length;
   const tabs = `<div class="segtabs" role="tablist">${[["", "All", "list"], ["transfer", "Transfer", "move"], ["repair", "Repair", "wrench"], ["damage", "Damage", "alert"]]
     .map(([k, l, icn]) => `<button type="button" role="tab" class="${(f.kind || "") === k ? "on" : ""}" aria-selected="${(f.kind || "") === k}" data-act="ftab" data-key="issues" data-k="kind" data-v="${k}">${ic(icn)}${l}<span class="n">${nb(k)}</span></button>`).join("")}</div>`;
-  return head("Issue register", "Every transfer, repair and damage entry", `${csvBtn("issues")}<button class="btn pri" data-act="issue">${ic("send")}<span class="l">Issue asset</span></button>`)
+  return head("Issue register", "Every transfer, repair and damage entry", `${csvBtn("issues")}<button class="btn pri" data-act="issue">${ic("plus")}<span class="l">Issue asset</span></button>`)
     + stats([
       { v: nf(rows.length), l: "Issues" },
       { v: nf(n("transfer")), l: "Transfers", tone: "violet" },
@@ -650,7 +650,7 @@ V.damage = () => {
     { h: "Notes", t: (i) => [i.notes, i.decisionNote && "Admin: " + i.decisionNote].filter(Boolean).join(" · "), cls: "wrap" },
     { h: "", t: () => "", nocsv: 1, nosort: 1, html: issueActs },
   ];
-  return head("Damage", "", `${csvBtn("damage")}<button class="btn pri" data-act="issue" data-kind="damage">${ic("alert")}<span class="l">Mark damaged</span></button>`)
+  return head("Damage", "", `${csvBtn("damage")}<button class="btn pri" data-act="issue" data-kind="damage">${ic("plus")}<span class="l">Mark damaged</span></button>`)
     + filterBar("damage", [
       { k: "q", type: "search", ph: "Search no., item, hostel or notes" },
       { k: "h", l: "Hostel", opts: hostelOpts(), all: "All hostels", hide: !M.admin },
@@ -707,7 +707,7 @@ function repairsView(key, pendingOnly) {
     { h: "Notes", t: (i) => i.notes || "", cls: "wrap" },
     { h: "", t: () => "", nocsv: 1, nosort: 1, html: issueActs },
   ];
-  return head(pendingOnly ? "Repair" : "All Repairs", "", `${csvBtn(key)}<button class="btn pri" data-act="issue" data-kind="repair">${ic("wrench")}<span class="l">Send for repair</span></button>`)
+  return head(pendingOnly ? "Repair" : "All Repairs", "", `${csvBtn(key)}<button class="btn pri" data-act="issue" data-kind="repair">${ic("plus")}<span class="l">Send for repair</span></button>`)
     + stats([
       { v: nf(open.reduce((s, i) => s + outstanding(i), 0)), l: "Quantity at repair now", tone: "amber" },
       { v: nf(open.length), l: "Open repair jobs", tone: "cyan" },
@@ -749,7 +749,7 @@ V.damaged = () => {
     { h: "Notes", t: (t) => t.notes || "", cls: "wrap" },
     { h: "Entered by", t: (t) => uName(t.createdBy), cls: "dim nw" },
   ];
-  return head("All Damaged", "Items written off as damaged, including those not repairable", `${csvBtn("damaged")}<button class="btn pri" data-act="issue" data-kind="damage">${ic("alert")}<span class="l">Mark damaged</span></button>`)
+  return head("All Damaged", "Items written off as damaged, including those not repairable", `${csvBtn("damaged")}<button class="btn pri" data-act="issue" data-kind="damage">${ic("plus")}<span class="l">Mark damaged</span></button>`)
     + stats([
       { v: nf(rows.length), l: "Entries" },
       { v: nf(rows.reduce((s, t) => s + t.qty, 0)), l: "Quantity damaged", tone: "red" },
