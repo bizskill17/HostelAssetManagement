@@ -215,9 +215,10 @@ function table(key, cols, rows, o = {}) {
   const body = shown.map((r) => `<tr>${cols.map((c) => `<td data-l="${esc(c.h)}" class="${c.num ? "num " : ""}${c.cls || ""}${c.h ? "" : " acts-td"}"><span>${c.html ? c.html(r) : esc(c.t(r))}</span></td>`).join("")}</tr>`).join("");
   const foot = o.foot ? `<tfoot><tr>${cols.map((c, i) => `<td data-l="${esc(c.h)}" class="${c.num ? "num" : ""}${c.foot || i === 0 ? "" : " nofoot"}">${c.foot ? esc(c.foot(rows)) : i === 0 ? "Total" : ""}</td>`).join("")}</tr></tfoot>` : "";
   const pager = !o.all && pages > 1 ? `<div class="pager"><span>Showing ${pg * PAGE + 1}–${pg * PAGE + shown.length} of ${nf(rows.length)}</span><span class="acts"><button class="btn sm" data-act="page" data-key="${key}" data-p="${pg - 1}" ${pg === 0 ? "disabled" : ""}>Previous</button><button class="btn sm" data-act="page" data-key="${key}" data-p="${pg + 1}" ${pg >= pages - 1 ? "disabled" : ""}>Next</button></span></div>` : "";
-  const cards = shown.map((r) => rowCard(cols, r, o)).join("");
+  // o.nocards: keep the table on phones too (Warranties and Masters).
+  const cards = o.nocards ? "" : shown.map((r) => rowCard(cols, r, o)).join("");
   const cfoot = o.foot ? `<div class="rcfoot"><b>Total</b>${cols.filter((c) => c.foot).map((c) => `<span><i>${esc(c.h)}</i>${esc(c.foot(rows))}</span>`).join("")}</div>` : "";
-  return `<div class="card hascards">${o.title || ""}${sortBar}<div class="tw"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody>${foot}</table></div><div class="rcards">${cards}${cfoot}</div>${pager}</div>`;
+  return `<div class="card${o.nocards ? "" : " hascards"}">${o.title || ""}${sortBar}<div class="tw"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody>${foot}</table></div>${o.nocards ? "" : `<div class="rcards">${cards}${cfoot}</div>`}${pager}</div>`;
 }
 // Mobile card for one row: coloured stripe, outline and tint by tone. o.card(r) gives a custom layout;
 // otherwise the Item (or first) column is the title, the bold number is the qty, and the rest are label/value pairs.
@@ -801,7 +802,7 @@ V.warranties = () => {
       { k: "c", l: "Category", opts: catOpts(), all: "All categories" },
       { k: "h", l: "Hostel", opts: hostelOpts(), all: "All hostels", hide: !M.admin },
     ])
-    + table("warranties", cols, rows, { tone: (w) => (w.daysLeft <= 30 ? "red" : w.daysLeft <= 90 ? "amber" : "green"), csv: "warranties", emptyIcon: "shield", empty: "No warranties yet." });
+    + table("warranties", cols, rows, { nocards: 1, csv: "warranties", emptyIcon: "shield", empty: "No warranties yet." });
 };
 
 /* ---------- masters (Admin) ---------- */
@@ -899,7 +900,7 @@ function masterView(key) {
   if (key === "hostels" || key === "items" || key === "users") fdefs.push({ k: "st", l: "Status", opts: [["a", "Active"], ["i", "Inactive"]], all: "Any status" });
   if (key === "users") fdefs.push({ k: "role", l: "Role", opts: [["Admin", "Admin"], ["Warden", "Warden"]], all: "All roles" });
   return head(m.title, m.sub, `${csvBtn(key)}<button class="btn pri" data-act="mEdit" data-m="${key}">${ic("plus")}<span class="l">Add ${m.one}</span></button>`)
-    + stats(st) + filterBar(key, fdefs) + table(key, cols, rows, { csv: key, emptyIcon: m.icon, empty: `No ${m.title.toLowerCase()} yet.` });
+    + stats(st) + filterBar(key, fdefs) + table(key, cols, rows, { nocards: 1, csv: key, emptyIcon: m.icon, empty: `No ${m.title.toLowerCase()} yet.` });
 }
 ["hostels", "items", "categories", "units", "places", "users"].forEach((k) => (V[k] = () => masterView(k)));
 
