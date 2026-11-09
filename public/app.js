@@ -1099,7 +1099,7 @@ function issueForm(kind = "transfer") {
       { k: "at", l: "Date", type: "date", req: 1, val: today(), half: 1 },
       { k: "toHostelId", l: "To hostel", type: "select", blank: "— Choose hostel —", req: 1, show: (v) => v.kind === "transfer",
         opts: (v) => S.d.hostels.filter((h) => h.active && h.id !== +v.hostelId).map((h) => [h.id, h.name]) },
-      { k: "place", l: "Sent to (repairer)", req: 1, ph: "e.g. Sharma Electricals", show: (v) => v.kind === "repair", half: 1, list: [...new Set(S.d.issues.filter((i) => i.kind === "repair" && i.place).map((i) => i.place))] },
+      { k: "place", l: "Sent to (repairer)", req: 1, ph: "e.g. Sharma Electricals", show: (v) => v.kind === "repair", half: 1 },
       { k: "expectedAt", l: "Expected back", type: "date", req: 1, show: (v) => v.kind === "repair", half: 1 },
       { k: "dplace", l: "Sent to after damage", type: "select", blank: "— Choose —", req: 1, show: (v) => v.kind === "damage", opts: () => S.d.damagePlaces.map((p) => [p.name, p.name]) },
       { k: "notes", l: "Notes", type: "textarea", ph: "Reason, condition, bill…" },
