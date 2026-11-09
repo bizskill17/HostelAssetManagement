@@ -159,7 +159,7 @@ function fv(key) { return (S.f[key] = S.f[key] || {}); }
 /* Filter bar: the search box, then the other filters. On phones and tablets the other filters sit
    behind a filter icon beside the search box; applied filters show as chips while it is closed. */
 S.fopen = {};
-function filterBar(key, defs) {
+function filterBar(key, defs, tabs = "") {
   const f = fv(key);
   const ctl = (d) => {
     const v = f[d.k] ?? "";
@@ -181,7 +181,7 @@ function filterBar(key, defs) {
   };
   const toggle = rest.length ? `<button type="button" class="fbtn${open || active.length ? " on" : ""}" data-act="ftoggle" data-key="${key}" aria-expanded="${open}" aria-label="Filters" title="Filters">${ic("filter")}${active.length ? `<span class="fcount">${active.length}</span>` : ""}</button>` : "";
   const chips = active.length && !open ? `<div class="fchips">${active.map((d) => `<span class="fchip">${esc(label(d))}<button type="button" data-act="fchip" data-key="${key}" data-k="${d.k}" aria-label="Remove filter">${ic("x")}</button></span>`).join("")}</div>` : "";
-  return `<div class="filters${open ? " fopen" : ""}">${search ? `<div class="srow">${ctl(search)}${toggle}</div>` : toggle}<div class="fpanel">${rest.map(ctl).join("")}${any ? `<button class="clear" data-act="clearf" data-key="${key}">Clear all</button>` : ""}</div>${chips}</div>`;
+  return `<div class="filters${open ? " fopen" : ""}${tabs ? " hastabs" : ""}">${search ? `<div class="srow">${ctl(search)}${tabs}${toggle}</div>` : tabs + toggle}<div class="fpanel">${rest.map(ctl).join("")}${any ? `<button class="clear" data-act="clearf" data-key="${key}">Clear all</button>` : ""}</div>${chips}</div>`;
 }
 const hostelOpts = () => S.d.hostels.filter((h) => M.scopeH.includes(h.id)).map((h) => [h.id, h.name]);
 const catOpts = () => S.d.categories.map((c) => [c.id, c.name]);
@@ -532,13 +532,12 @@ V.issues = () => {
       { v: nf(rows.filter((i) => i.status === "pending").length), l: "Awaiting receipt", tone: "cyan" },
       { v: nf(rows.filter((i) => !["void", "rejected", "cancelled"].includes(i.status)).reduce((s, i) => s + i.qty, 0)), l: "Quantity issued", tone: "slate" },
     ])
-    + tabs
     + filterBar("issues", [
       { k: "q", type: "search", ph: "Search no., item, hostel or notes" },
       { k: "st", l: "Status", opts: Object.entries(STATUS).map(([k, v]) => [k, v.l]), all: "All statuses" },
       { k: "h", l: "Hostel", opts: S.d.hostels.map((h) => [h.id, h.name]), all: "All hostels", hide: !M.admin },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
-    ])
+    ], tabs)
     + table("issues", issueCols(), rows, { csv: "issue-register", empty: "No issues yet." });
 };
 
