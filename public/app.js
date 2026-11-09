@@ -861,7 +861,7 @@ const MASTERS = {
   places: {
     title: "Damage destinations", one: "destination", sub: "Where damaged items are sent", icon: "trash", coll: "damagePlaces",
     rows: () => S.d.damagePlaces, search: (r) => [r.name],
-    cols: [{ h: "Destination", t: (r) => r.name, cls: "strong" }, { h: "Times used", t: (r) => S.d.txns.filter((t) => t.kind === "damaged" && t.party === r.name).length, num: 1 }],
+    cols: [{ h: "Destination", t: (r) => r.name, cls: "strong" }],
     fields: [{ k: "name", l: "Destination", req: 1, ph: "e.g. Scrap dealer" }],
   },
   users: {
