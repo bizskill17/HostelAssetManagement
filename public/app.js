@@ -1441,7 +1441,7 @@ let SSO = null;
 function closeSS() {
   if (!SSO) return;
   SSO.pop.remove();
-  if (SSO.dim) SSO.dim.remove();
+  if (SSO.undo) SSO.undo();
   document.removeEventListener("mousedown", SSO.outside, true);
   window.removeEventListener("scroll", SSO.scrolled, true);
   window.removeEventListener("resize", SSO.place);
@@ -1452,18 +1452,26 @@ const hl = (t, q) => { if (!q) return esc(t); const i = t.toLowerCase().indexOf(
 function openSS(sel, btn, initial = "") {
   closeSS();
   const pop = document.createElement("div");
-  // Phones: a centered pick list over a dimmed screen (not attached under the field), with the keyboard closed.
-  const sheet = matchMedia("(max-width: 640px)").matches;
-  pop.className = "ss-pop" + (sheet ? " sheet" : "");
-  let dim = null;
-  if (sheet) {
-    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-    dim = document.createElement("div");
-    dim.className = "ss-dim";
-    document.body.appendChild(dim);
+  // Phones: the form scrolls so the field sits near its top, and the list floats just below the field, with the keyboard closed.
+  const mob = matchMedia("(max-width: 640px)").matches;
+  pop.className = "ss-pop" + (mob ? " mob" : "");
+  let scroller = null, padWas = "";
+  if (mob) {
+    if (document.activeElement && document.activeElement !== btn && document.activeElement.blur) document.activeElement.blur();
+    for (let el = btn.parentElement; el && el !== document.body; el = el.parentElement) {
+      const oy = getComputedStyle(el).overflowY;
+      if ((oy === "auto" || oy === "scroll") && el.clientHeight > 0) { scroller = el; break; }
+    }
+    // Room to scroll even when the field is near the end of the form; removed again on close.
+    const sc = scroller || document.scrollingElement;
+    padWas = sc.style.paddingBottom;
+    sc.style.paddingBottom = `calc(${getComputedStyle(sc).paddingBottom} + 60vh)`;
+    const lab = btn.closest(".fld")?.querySelector("label") || btn;
+    const top = scroller ? scroller.getBoundingClientRect().top : 0;
+    const shift = lab.getBoundingClientRect().top - top - 8;
+    if (scroller) scroller.scrollTop += shift; else scrollBy(0, shift - 64);
   }
-  const title = sheet ? (btn.getAttribute("aria-label") || btn.closest(".fld")?.querySelector("label")?.textContent.replace("*", "").trim() || "Choose") : "";
-  pop.innerHTML = (sheet ? `<div class="ss-h"><b>${esc(title)}</b><button type="button" class="iconbtn ss-x" aria-label="Close">${ic("x")}</button></div>` : "") + `<div class="ss-s">${ic("search")}<input placeholder="Search…" autocomplete="off" aria-label="Search options"></div><div class="ss-l" role="listbox"></div>`;
+  pop.innerHTML = `<div class="ss-s">${ic("search")}<input placeholder="Search…" autocomplete="off" aria-label="Search options"></div><div class="ss-l" role="listbox"></div>`;
   document.body.appendChild(pop);
   const inp = $("input", pop), list = $(".ss-l", pop);
   // "— Choose … —" placeholders aren't real choices, so they aren't listed (filter options like "All hostels" stay).
@@ -1482,14 +1490,16 @@ function openSS(sel, btn, initial = "") {
     if (a) a.scrollIntoView({ block: "nearest" });
   };
   const place = () => {
-    if (sheet) {
-      const vv = window.visualViewport, vh = vv ? vv.height : innerHeight, top = vv ? vv.offsetTop : 0;
+    const r = btn.getBoundingClientRect();
+    if (mob) {
+      // Always just below the field, as wide as it, and short enough to stay on screen (above the keyboard too).
+      const vv = window.visualViewport, vh = vv ? vv.height + vv.offsetTop : innerHeight;
+      pop.style.left = r.left + "px"; pop.style.width = r.width + "px"; pop.style.bottom = "";
+      pop.style.top = r.bottom + 4 + "px";
       const fixed = pop.offsetHeight - list.offsetHeight;
-      list.style.maxHeight = Math.max(120, Math.min(vh * 0.62 - fixed, 420)) + "px";
-      pop.style.top = top + vh / 2 + "px";
+      list.style.maxHeight = Math.max(110, Math.min(300, vh - r.bottom - 14 - fixed)) + "px";
       return;
     }
-    const r = btn.getBoundingClientRect();
     const w = Math.max(r.width, 230);
     pop.style.width = w + "px";
     pop.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + "px";
@@ -1524,8 +1534,7 @@ function openSS(sel, btn, initial = "") {
   const outside = (e) => { if (!pop.contains(e.target) && !btn.contains(e.target)) closeSS(); };
   // Phones: the keyboard resizes and scrolls the page, so keep the list open and move it with the field instead of closing it.
   const scrolled = (e) => { if (!pop.contains(e.target)) { if (!btn.isConnected) closeSS(); else place(); } };
-  SSO = { pop, outside, scrolled, place, dim };
-  if (sheet) $(".ss-x", pop).addEventListener("click", () => closeSS());
+  SSO = { pop, outside, scrolled, place, undo: mob ? () => { (scroller || document.scrollingElement).style.paddingBottom = padWas; } : null };
   document.addEventListener("mousedown", outside, true);
   window.addEventListener("scroll", scrolled, true);
   window.addEventListener("resize", place);
