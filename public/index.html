@@ -250,7 +250,11 @@ tfoot td{background:#f8f9fc;font-weight:700;border-top:1px solid var(--line)}
 .dlg.mini .box{max-width:380px}
 .chk{display:flex;align-items:center;gap:9px;font-weight:500;cursor:pointer}
 .chk input{width:17px;height:17px;accent-color:var(--brand)}
-.err{grid-column:span 2;color:var(--red);font-weight:600;font-size:13px;min-height:0}
+.err{grid-column:span 2;display:flex;align-items:flex-start;gap:8px;background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;border-radius:10px;padding:10px 12px;font-weight:600;font-size:13px;line-height:1.4}
+.err .i{width:17px;height:17px;flex:none;margin-top:1px}
+.fld.bad>label{color:#B91C1C}
+.fld.bad input,.fld.bad select,.fld.bad textarea,.fld.bad .ss-btn,.fld.bad .seg{border-color:#DC2626!important;box-shadow:0 0 0 3px rgba(220,38,38,.14)!important}
+.ferr{color:#B91C1C;font-size:12px;font-weight:600;margin-top:5px}
 .err:empty{display:none}
 .summary{grid-column:span 2;background:var(--line2);border-radius:12px;padding:11px 13px;font-size:13px;color:var(--ink2)}
 .summary b{color:var(--ink)}

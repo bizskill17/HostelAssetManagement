@@ -915,9 +915,24 @@ function openForm(o) {
       else if (fd.type === "check") return `<div class="fld"><label class="chk"><input type="checkbox" name="${fd.k}" ${v ? "checked" : ""}> ${esc(fd.l)}</label>${helpH}</div>`;
       else if (fd.type === "seg") ctl = `<input type="hidden" name="${fd.k}" value="${esc(v)}"><div class="seg">${fd.opts(vals).map(([ov, ol, icn]) => `<button type="button" data-seg="${fd.k}" data-v="${esc(ov)}" class="${String(ov) === String(v) ? "on" : ""}">${icn ? ic(icn) : ""}${esc(ol)}</button>`).join("")}</div>`;
       else ctl = `<input id="f_${fd.k}" name="${fd.k}" type="${fd.type || "text"}" value="${esc(v)}" placeholder="${esc((typeof fd.ph === "function" ? fd.ph(vals) : fd.ph) || "")}" ${fd.type === "number" ? 'min="0" step="1" inputmode="numeric"' : ""} ${fd.ro ? "readonly tabindex=\"-1\" style=\"background:var(--line2);font-weight:700\"" : ""} ${fd.list ? `list="l_${fd.k}"` : ""} autocomplete="${fd.type === "password" ? "new-password" : "off"}">${fd.list ? `<datalist id="l_${fd.k}">${fd.list.map((x) => `<option value="${esc(x)}">`).join("")}</datalist>` : ""}`;
-      return `<div class="fld${fd.half ? " half" : ""}">${lab}${ctl}${helpH}</div>`;
-    }).join("") + `<div class="err"></div>`;
+      return `<div class="fld${fd.half ? " half" : ""}${bad[fd.k] ? " bad" : ""}" data-fk="${fd.k}">${lab}${ctl}${bad[fd.k] ? `<div class="ferr">${esc(bad[fd.k])}</div>` : ""}${helpH}</div>`;
+    }).join("") + `<div class="err" role="alert"></div>`;
     refresh();
+  };
+  // Field-level errors: red border and a message under each field that needs attention.
+  const bad = {};
+  const clearBad = (k) => {
+    if (!bad[k]) return;
+    delete bad[k];
+    const f = body.querySelector(`.fld[data-fk="${k}"]`);
+    if (f) { f.classList.remove("bad"); f.querySelector(".ferr")?.remove(); }
+    if (!Object.keys(bad).length) setErr("");
+  };
+  const setErr = (msg) => {
+    const e = $(".err", form);
+    if (!e) return;
+    e.innerHTML = msg ? `${ic("alert")}<span>${esc(msg)}</span>` : "";
+    if (msg) e.scrollIntoView({ block: "nearest", behavior: "smooth" });
   };
   // Labels and hints change with the values; update them in place so typing is never interrupted.
   const isReq = (fd) => (typeof fd.req === "function" ? fd.req(vals) : fd.req);
@@ -944,8 +959,8 @@ function openForm(o) {
     if (rebuilds(e.target)) { const n = e.target.name; draw(); const el = form.elements[n]; if (el && el.focus) el.focus(); }
     else refresh();
   };
-  form.addEventListener("change", (e) => { if (rebuilds(e.target)) onField(e); else { read(); refresh(); } });
-  form.addEventListener("input", (e) => { if (!rebuilds(e.target)) onField(e); });
+  form.addEventListener("change", (e) => { if (e.target.name) clearBad(e.target.name); if (rebuilds(e.target)) onField(e); else { read(); refresh(); } });
+  form.addEventListener("input", (e) => { if (e.target.name) clearBad(e.target.name); if (!rebuilds(e.target)) onField(e); });
   form.addEventListener("click", (e) => {
     const ab = e.target.closest("[data-addfor]");
     if (ab) {
@@ -964,25 +979,44 @@ function openForm(o) {
       return;
     }
     const sb = e.target.closest("[data-seg]");
-    if (sb) { read(); vals[sb.dataset.seg] = sb.dataset.v; if (o.onChange) o.onChange(vals, sb.dataset.seg); draw(); return; }
+    if (sb) { read(); clearBad(sb.dataset.seg); vals[sb.dataset.seg] = sb.dataset.v; if (o.onChange) o.onChange(vals, sb.dataset.seg); draw(); return; }
     if (e.target.closest("[data-close]")) closeDlg();
   });
   wrap.addEventListener("mousedown", (e) => { if (e.target === wrap) closeDlg(); });
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     read();
-    const err = $(".err", form);
+    for (const k of Object.keys(bad)) delete bad[k];
     for (const fd of o.fields) {
-      if (isReq(fd) && (!fd.show || fd.show(vals)) && String(vals[fd.k] ?? "").trim() === "") { err.textContent = `Enter ${(typeof fd.l === "function" ? fd.l(vals) : fd.l).toLowerCase()}.`; return; }
+      if (fd.type === "info" || (fd.show && !fd.show(vals))) continue;
+      const v = String(vals[fd.k] ?? "").trim();
+      const name = (typeof fd.l === "function" ? fd.l(vals) : fd.l).replace(/\s*\(.*?\)/g, "").toLowerCase();
+      if (isReq(fd) && v === "") bad[fd.k] = fd.type === "select" || fd.type === "seg" ? `Choose ${name}.` : `Enter ${name}.`;
+      else if (fd.type === "number" && v !== "" && (!/^\d+$/.test(v) || (isReq(fd) && +v <= 0 && fd.k === "qty"))) bad[fd.k] = "Enter a whole number greater than 0.";
+      else if (fd.type === "email" && v !== "" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) bad[fd.k] = "Enter a valid email address.";
+    }
+    const n = Object.keys(bad).length;
+    if (n) {
+      draw();
+      setErr(n === 1 ? "Please fix the highlighted field." : `Please fix the ${n} highlighted fields.`);
+      const first = body.querySelector(".fld.bad");
+      if (first) { first.scrollIntoView({ block: "center", behavior: "smooth" }); const c = first.querySelector("input:not([type=hidden]), textarea, .ss-btn, select"); if (c && c.focus) c.focus({ preventScroll: true }); }
+      return;
     }
     const btn = $('button[type="submit"]', form);
-    btn.disabled = true; err.textContent = "";
+    btn.disabled = true; setErr("");
     try {
       const msg = await o.onSubmit(vals);
       closeDlg();
       if (msg) toast(msg);
       await reload();
-    } catch (ex) { err.textContent = ex.message || "Couldn't save. Try again."; }
+    } catch (ex) {
+      const m = ex.message || "Couldn't save. Try again.";
+      // A duplicate name or email points at that field too.
+      const k = /already exists/.test(m) && (form.elements.email && /email/.test(m) ? "email" : form.elements.name ? "name" : "");
+      if (k) { bad[k] = "Already used. Choose a different one."; draw(); }
+      setErr(m);
+    }
     finally { btn.disabled = false; }
   });
   setTimeout(() => { const first = form.querySelector(".db input:not([type=hidden]):not([type=checkbox]), .db select, .db textarea"); if (first && window.innerWidth > 900) first.focus(); }, 40);
@@ -1001,10 +1035,10 @@ function promptBox(o) {
   f.addEventListener("submit", async (e) => {
     e.preventDefault();
     const v = f.v.value.trim();
-    if (!v) { err.textContent = `Enter ${o.label.toLowerCase()}.`; return; }
+    if (!v) { f.querySelector(".fld").classList.add("bad"); err.innerHTML = `${ic("alert")}<span>Enter ${esc(o.label.toLowerCase())}.</span>`; f.v.focus(); return; }
     const btn = $('button[type="submit"]', f);
     btn.disabled = true; err.textContent = "";
-    try { await o.onSave(v); close(); } catch (ex) { err.textContent = ex.message || "Couldn't add. Try again."; btn.disabled = false; }
+    try { await o.onSave(v); close(); } catch (ex) { err.innerHTML = `${ic("alert")}<span>${esc(ex.message || "Couldn't add. Try again.")}</span>`; btn.disabled = false; }
   });
   setTimeout(() => f.v.focus(), 30);
 }
@@ -1313,7 +1347,7 @@ document.addEventListener("change", (e) => {
   else if (el.dataset.f && (el.tagName === "SELECT" || el.type === "date")) { fv(el.dataset.fkey)[el.dataset.f] = el.value; S.page[el.dataset.fkey] = 0; render(); }
 });
 document.addEventListener("submit", async (e) => {
-  if (e.target.id === "setForm") { e.preventDefault(); try { await saveSettings(); } catch (ex) { $("#setErr").textContent = ex.message; } }
+  if (e.target.id === "setForm") { e.preventDefault(); try { await saveSettings(); } catch (ex) { $("#setErr").innerHTML = `${ic("alert")}<span>${esc(ex.message)}</span>`; $("#setErr").scrollIntoView({ block: "nearest" }); } }
 });
 // Enter never saves a form (dialogs, Settings); only the Save button does. Enter still adds a new line in notes boxes.
 document.addEventListener("keydown", (e) => {
@@ -1474,7 +1508,7 @@ function showAuth(mode) {
       await api(setup ? "setup" : "login", body);
       a.hidden = true;
       await start();
-    } catch (ex) { err.textContent = ex.message || "Couldn't sign in."; }
+    } catch (ex) { err.innerHTML = `${ic("alert")}<span>${esc(ex.message || "Couldn't sign in.")}</span>`; }
     finally { btn.disabled = false; }
   });
 }
