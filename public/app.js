@@ -1126,9 +1126,8 @@ function receiveForm(id) {
   if (!i) return;
   const u = iUnit(i.itemId);
   openForm({
-    title: "Update received quantity", sub: `<span class="mono">${esc(i.no)}</span> · ${esc(iName(i.itemId))} · ${esc(hName(i.hostelId))} → ${esc(hName(i.toHostelId))}`,
+    title: "Update received quantity", sub: `${esc(iName(i.itemId))} · ${esc(hName(i.hostelId))} → ${esc(hName(i.toHostelId))}`,
     fields: [
-      { k: "info", type: "info", html: () => `${esc(hName(i.hostelId))} sent <b>${nf(i.qty)} ${esc(u)}</b> on ${fmtD(i.at)}${i.notes ? ` · “${esc(i.notes)}”` : ""}. Sent by ${esc(uName(i.createdBy))}.` },
       { k: "sent", l: "Send qty", type: "text", half: 1, val: String(i.qty), ro: 1 },
       { k: "receivedQty", l: "Received qty", type: "number", half: 1, req: 1, val: String(i.qty),
         help: (v) => { const r = +v.receivedQty; if (v.receivedQty === "" || isNaN(r)) return ""; if (r > i.qty) return { t: `Can't be more than ${nf(i.qty)}`, c: "warn" }; if (r === i.qty) return { t: "All received", c: "good" }; if (r === 0) return { t: "Nothing received: all stay with the sending hostel", c: "warn" }; return { t: `${nf(i.qty - r)} short: they stay with the sending hostel`, c: "warn" }; } },
