@@ -40,6 +40,8 @@ const P = {
   chev: '<path d="m6 9 6 6 6-6"/>',
   filter: '<path d="M4 6h16"/><path d="M7 12h10"/><path d="M10 18h4"/>',
   move: '<path d="M17 3l4 4-4 4"/><path d="M3 7h18"/><path d="M7 21l-4-4 4-4"/><path d="M21 17H3"/>',
+  tick: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  ban: '<circle cx="12" cy="12" r="9"/><path d="m5.7 5.7 12.6 12.6"/>',
   undo: '<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>',
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
   mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
@@ -452,7 +454,7 @@ V.stock = () => {
     { h: "Notes", t: (t) => t.notes || "", cls: "wrap" },
     { h: "Entered by", t: (t) => uName(t.createdBy), cls: "dim nw" },
   ];
-  if (M.admin) cols.push({ h: "", t: () => "", nocsv: 1, nosort: 1, html: (t) => `<div class="rowacts"><button class="iconbtn del" title="Delete entry" data-act="deltxn" data-id="${t.id}">${ic("trash")}</button></div>` });
+  if (M.admin) cols.push({ h: "", t: () => "", nocsv: 1, nosort: 1, html: (t) => `<div class="rowacts">${ab("deltxn", t.id, "trash", "Delete", "red")}</div>` });
   return head("Stock in", "Opening stock and items received at each hostel", `${csvBtn("stock")}<button class="btn pri" data-act="stockin">${ic("plus")}<span class="l">Add stock</span></button>`)
     + stats([
       { v: nf(rows.length), l: "Entries" },
@@ -494,20 +496,22 @@ function recvHtml(i) {
   return i.receivedQty < i.qty ? `<span class="qout">${nf(i.receivedQty)}</span>` : `<span class="qin">${nf(i.receivedQty)}</span>`;
 }
 const isReceived = (i) => i.kind === "transfer" && ["received", "short", "approved"].includes(i.status);
+// Icon-only row action: solid coloured square with a tooltip (title) and an accessible label.
+const ab = (act, id, icon, title, tone, extra = "") => `<button type="button" class="ab ${tone}" data-act="${act}" data-id="${id}" title="${esc(title)}" aria-label="${esc(title)}" ${extra}>${ic(icon)}</button>`;
 function issueActs(i) {
   const b = [];
   if (i.kind === "transfer" && i.status === "pending") {
-    if (canWriteHostel(i.toHostelId)) b.push(`<button class="btn sm pri" data-act="receive" data-id="${i.id}">${ic("edit")}Update</button>`);
-    if (canWriteHostel(i.hostelId)) b.push(`<button class="btn sm" data-act="cancel" data-id="${i.id}">Cancel</button>`);
+    if (canWriteHostel(i.toHostelId)) b.push(ab("receive", i.id, "edit", "Update received qty", "blue"));
+    if (canWriteHostel(i.hostelId)) b.push(ab("cancel", i.id, "x", "Cancel", "slate"));
   }
   if (i.kind === "damage" && i.status === "pending") {
-    if (M.admin) b.push(`<button class="btn sm ok" data-act="dmgok" data-id="${i.id}">Approve</button><button class="btn sm bad" data-act="dmgno" data-id="${i.id}">Reject</button>`);
-    else if (canWriteHostel(i.hostelId)) b.push(`<button class="btn sm" data-act="cancel" data-id="${i.id}">Cancel</button>`);
+    if (M.admin) b.push(ab("dmgok", i.id, "tick", "Approve", "green") + ab("dmgno", i.id, "ban", "Reject", "orange"));
+    else if (canWriteHostel(i.hostelId)) b.push(ab("cancel", i.id, "x", "Cancel", "slate"));
   }
-  if (i.kind === "repair" && outstanding(i) > 0 && (i.status === "at_repair" || i.status === "partly_returned") && canWriteHostel(i.hostelId)) b.push(`<button class="btn sm ok" data-act="return" data-id="${i.id}">Record return</button>`);
+  if (i.kind === "repair" && outstanding(i) > 0 && (i.status === "at_repair" || i.status === "partly_returned") && canWriteHostel(i.hostelId)) b.push(ab("return", i.id, "undo", "Record return", "green"));
   if (M.admin) b.push(isReceived(i)
-    ? `<button class="iconbtn" disabled title="Received transfers can't be deleted">${ic("trash")}</button>`
-    : `<button class="iconbtn del" title="Delete this issue" data-act="delissue" data-id="${i.id}">${ic("trash")}</button>`);
+    ? `<button type="button" class="ab red" disabled title="Received transfers can't be deleted" aria-label="Delete (not allowed)">${ic("trash")}</button>`
+    : ab("delissue", i.id, "trash", "Delete", "red"));
   return `<div class="rowacts">${b.join("")}</div>`;
 }
 V.issues = () => {
@@ -734,7 +738,7 @@ V.warranties = () => {
     { h: "Expiry", t: (w) => w.expiryAt, html: (w) => `<b>${fmtD(w.expiryAt)}</b>`, cls: "nw" },
     { h: "Status", t: (w) => w.daysLeft, csv: (w) => (w.daysLeft < 0 ? "Expired" : w.daysLeft + " days left"), num: 1, html: (w) => daysBadge(w.daysLeft) },
     { h: "Notes", t: (w) => w.notes || "", cls: "wrap" },
-    { h: "", t: () => "", nocsv: 1, nosort: 1, html: (w) => (canWriteHostel(w.hostelId) ? `<div class="rowacts"><button class="iconbtn" title="Edit" data-act="warranty" data-id="${w.id}">${ic("edit")}</button>${M.admin ? `<button class="iconbtn del" title="Delete" data-act="delwarranty" data-id="${w.id}">${ic("trash")}</button>` : ""}</div>` : "") },
+    { h: "", t: () => "", nocsv: 1, nosort: 1, html: (w) => (canWriteHostel(w.hostelId) ? `<div class="rowacts">${ab("warranty", w.id, "edit", "Edit", "blue")}${M.admin ? ab("delwarranty", w.id, "trash", "Delete", "red") : ""}</div>` : "") },
   ];
   const inN = (a, b) => M.warr.filter((w) => w.daysLeft >= a && w.daysLeft <= b).length;
   return head("Warranties", "Track warranties and see what is about to expire", `${csvBtn("warranties")}<button class="btn pri" data-act="warranty">${ic("plus")}<span class="l">Add warranty</span></button>`)
@@ -840,7 +844,7 @@ function masterView(key) {
   const m = MASTERS[key];
   const f = fv(key);
   const rows = m.rows().filter((r) => match(f.q, ...m.search(r))).filter((r) => !f.st || (f.st === "a" ? r.active !== false : r.active === false)).filter((r) => !f.role || r.role === f.role).slice().sort((a, b) => cmp(a.name, b.name));
-  const cols = m.cols.concat([{ h: "", t: () => "", nocsv: 1, nosort: 1, html: (r) => `<div class="rowacts"><button class="iconbtn" title="Edit" data-act="mEdit" data-m="${key}" data-id="${r.id}">${ic("edit")}</button><button class="iconbtn del" title="Delete" data-act="mDel" data-m="${key}" data-id="${r.id}">${ic("trash")}</button></div>` }]);
+  const cols = m.cols.concat([{ h: "", t: () => "", nocsv: 1, nosort: 1, html: (r) => `<div class="rowacts">${ab("mEdit", r.id, "edit", "Edit", "blue", `data-m="${key}"`)}${ab("mDel", r.id, "trash", "Delete", "red", `data-m="${key}"`)}</div>` }]);
   const all = m.rows();
   const st = [{ v: nf(all.length), l: m.title }];
   if (key === "hostels" || key === "items") st.push({ v: nf(all.filter((r) => r.active).length), l: "Active", tone: "green" }, { v: nf(all.filter((r) => !r.active).length), l: "Inactive", tone: "slate" });

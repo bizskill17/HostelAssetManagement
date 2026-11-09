@@ -163,7 +163,7 @@ th.sorted{color:var(--brand-d)}th.sorted .ar{opacity:1;color:var(--brand)}
 td{padding:9px 8px;border-bottom:1px solid var(--line2);vertical-align:top;white-space:normal;overflow-wrap:break-word;word-break:normal;line-height:1.4}
 td.num,td .mono{white-space:nowrap}
 td .b{white-space:normal;line-height:1.3;display:inline-flex;align-items:baseline}
-td .rowacts{flex-wrap:wrap;gap:5px}
+td .rowacts{flex-wrap:nowrap;gap:6px}
 td .rowacts .btn.sm{padding:5px 9px;white-space:normal;text-align:center;line-height:1.25}
 /* cell borders on every table */
 .tw table{border-collapse:collapse}
@@ -185,7 +185,11 @@ tfoot td{background:#f8f9fc;font-weight:700;border-top:1px solid var(--line)}
 .empty svg{width:34px;height:34px;color:#b7bfd2;margin-bottom:6px}
 .pager{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-top:1px solid var(--line2);color:var(--muted);font-size:12.5px;flex-wrap:wrap}
 .pager .btn{padding:5px 10px}
-.rowacts{display:flex;gap:6px;justify-content:flex-end;align-items:center}
+.rowacts{display:flex;gap:6px;justify-content:flex-end;align-items:center;white-space:nowrap}
+.ab{width:30px;height:30px;flex:none;border:0;border-radius:8px;display:inline-grid;place-items:center;color:#fff;cursor:pointer;padding:0;transition:filter .12s,transform .08s}
+.ab .i{width:16px;height:16px}.ab:hover{filter:brightness(.9)}.ab:active{transform:scale(.94)}
+.ab:disabled{opacity:.35;cursor:not-allowed;filter:grayscale(.4)}
+.ab.blue{background:#2F54EB}.ab.green{background:#15803D}.ab.red{background:#DC2626}.ab.slate{background:#64748B}.ab.orange{background:#EA580C}
 
 /* ---------- badges ---------- */
 .b{display:inline-flex;align-items:center;padding:3px 9px;border-radius:99px;font-size:12px;font-weight:600;white-space:nowrap;background:var(--slate-s);color:var(--ink2)}
