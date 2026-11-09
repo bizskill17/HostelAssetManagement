@@ -228,23 +228,23 @@ function rowCard(cols, r, o) {
   const cell = (c) => (c.html ? c.html(r) : esc(c.t(r)));
   const actC = cols.find((c) => !c.h);
   const acts = actC ? cell(actC) : "";
-  const actsHtml = acts && /<button/.test(acts) ? `<div class="rca">${acts}</div>` : "";
+  const actsHtml = acts && /<button/.test(acts) ? acts : "";
+  const extraLine = (ex) => (ex.length ? `<div class="rcn">${ex.map(([l, v]) => `${esc(l)} <b>${v}</b>`).join(" · ")}</div>` : "");
   if (o.card) {
+    // Slim row: item + qty | icons; route | status; No. · date · by | right; extras on one small line.
     const k = o.card(r);
     const ex = (k.extra || []).filter(([, v]) => v !== "" && v != null);
-    return `<div class="rc t-${k.tone || "blue"}"><div class="rc1"><span class="rct">${k.title}</span>${k.qty != null ? `<span class="rcq">${k.qty}</span>` : ""}</div>`
-      + (k.sub ? `<div class="rcs">${k.sub}</div>` : "")
-      + (k.meta || k.status ? `<div class="rc3"><span>${k.meta || ""}</span><span class="rcst">${k.status || ""}</span></div>` : "")
-      + (ex.length ? `<div class="rcg">${ex.map(([l, v]) => `<span>${esc(l)}</span><b>${v}</b>`).join("")}</div>` : "")
-      + actsHtml + `</div>`;
+    return `<div class="rc t-${k.tone || "blue"}"><div class="rcl"><span class="rct">${k.title}${k.qty != null ? ` <small class="rcq">${k.qty}</small>` : ""}</span>${actsHtml}</div>`
+      + (k.sub || k.status ? `<div class="rcl"><span class="rcs">${k.sub || ""}</span><span class="rcst">${k.status || ""}</span></div>` : "")
+      + (k.meta || k.right ? `<div class="rcl rcm"><span>${k.meta || ""}</span><span>${k.right || ""}</span></div>` : "")
+      + extraLine(ex) + `</div>`;
   }
   const named = cols.filter((c) => c.h);
   const tC = named.find((c) => c.h === "Item") || named[0];
   const qC = named.find((c) => c !== tC && (/\bstrong\b/.test(c.cls || "") || c.h === "Qty"));
   const rest = named.filter((c) => c !== tC && c !== qC).map((c) => [c.h, cell(c)]).filter(([, v]) => String(v).replace(/<[^>]*>/g, "").trim() !== "" && v !== "0" || /class="b /.test(v));
-  return `<div class="rc t-${o.tone ? o.tone(r) : "blue"}"><div class="rc1"><span class="rct">${cell(tC)}</span>${qC ? `<span class="rcq"><i>${esc(qC.h)}</i> ${cell(qC)}</span>` : ""}</div>`
-    + (rest.length ? `<div class="rcg">${rest.map(([l, v]) => `<span>${esc(l)}</span><b>${v}</b>`).join("")}</div>` : "")
-    + actsHtml + `</div>`;
+  return `<div class="rc t-${o.tone ? o.tone(r) : "blue"}"><div class="rcl"><span class="rct">${cell(tC)}${qC ? ` <small class="rcq">${esc(qC.h)} ${cell(qC)}</small>` : ""}</span>${actsHtml}</div>`
+    + extraLine(rest) + `</div>`;
 }
 // Card layout shared by transfer, repair and damage lists.
 function issueCard(i, extra = []) {
@@ -256,6 +256,7 @@ function issueCard(i, extra = []) {
     qty: `${nf(i.qty)} <small>${esc(iUnit(i.itemId))}</small>`,
     sub: `${esc(hName(i.hostelId))}${to ? " → " + esc(to) : ""}`,
     meta: `<span class="mono">${esc(i.no)}</span> · ${fmtD(i.at)} · ${esc(uName(i.createdBy))}`,
+    right: i.kind === "repair" && i.expectedAt && outstanding(i) > 0 ? `Back ${fmtD(i.expectedAt)}` : "",
     status: i.kind === "repair" && isOverdue(i) ? `<span class="b red">Overdue</span>` : badge(issueStatus(i)),
     extra: recv.concat(extra, [["Notes", esc([i.notes, i.decisionNote && "Note: " + i.decisionNote].filter(Boolean).join(" · "))]]),
   };
@@ -725,7 +726,7 @@ function repairsView(key, pendingOnly) {
       { k: "h", l: "Hostel", opts: hostelOpts(), all: "All hostels", hide: !M.admin },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
     ])
-    + table(key, cols, rows, { card: (i) => issueCard(i, [["Returned", nf(i.returnedQty)], ["Still out", `<b>${nf(outstanding(i))}</b>`], ["Not repairable", i.scrappedQty ? nf(i.scrappedQty) : ""], ["Expected back", i.expectedAt ? fmtD(i.expectedAt) : ""]]), csv: pendingOnly ? "repairs-pending" : "repairs-all", emptyIcon: "wrench", empty: st === "open" ? "Nothing is at repair right now." : "No repairs to show." });
+    + table(key, cols, rows, { card: (i) => ({ ...issueCard(i, [["Returned", nf(i.returnedQty)], ["Still out", nf(outstanding(i))], ["Not repairable", i.scrappedQty ? nf(i.scrappedQty) : ""]]), right: i.expectedAt ? `Back ${fmtD(i.expectedAt)}` : "" }), csv: pendingOnly ? "repairs-pending" : "repairs-all", emptyIcon: "wrench", empty: st === "open" ? "Nothing is at repair right now." : "No repairs to show." });
 }
 V.repairs = () => repairsView("repairs", true);
 V.allrepairs = () => repairsView("allrepairs", false);
