@@ -1441,6 +1441,7 @@ let SSO = null;
 function closeSS() {
   if (!SSO) return;
   SSO.pop.remove();
+  if (SSO.dim) SSO.dim.remove();
   document.removeEventListener("mousedown", SSO.outside, true);
   window.removeEventListener("scroll", SSO.scrolled, true);
   window.removeEventListener("resize", SSO.place);
@@ -1451,11 +1452,22 @@ const hl = (t, q) => { if (!q) return esc(t); const i = t.toLowerCase().indexOf(
 function openSS(sel, btn, initial = "") {
   closeSS();
   const pop = document.createElement("div");
-  pop.className = "ss-pop";
-  pop.innerHTML = `<div class="ss-s">${ic("search")}<input placeholder="Search…" autocomplete="off" aria-label="Search options"></div><div class="ss-l" role="listbox"></div>`;
+  // Phones: a centered pick list over a dimmed screen (not attached under the field), with the keyboard closed.
+  const sheet = matchMedia("(max-width: 640px)").matches;
+  pop.className = "ss-pop" + (sheet ? " sheet" : "");
+  let dim = null;
+  if (sheet) {
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    dim = document.createElement("div");
+    dim.className = "ss-dim";
+    document.body.appendChild(dim);
+  }
+  const title = sheet ? (btn.getAttribute("aria-label") || btn.closest(".fld")?.querySelector("label")?.textContent.replace("*", "").trim() || "Choose") : "";
+  pop.innerHTML = (sheet ? `<div class="ss-h"><b>${esc(title)}</b><button type="button" class="iconbtn ss-x" aria-label="Close">${ic("x")}</button></div>` : "") + `<div class="ss-s">${ic("search")}<input placeholder="Search…" autocomplete="off" aria-label="Search options"></div><div class="ss-l" role="listbox"></div>`;
   document.body.appendChild(pop);
   const inp = $("input", pop), list = $(".ss-l", pop);
-  const opts = [...sel.options].map((o, i) => ({ i, t: o.text }));
+  // "— Choose … —" placeholders aren't real choices, so they aren't listed (filter options like "All hostels" stay).
+  const opts = [...sel.options].map((o, i) => ({ i, t: o.text, ph: o.value === "" && /^—/.test(o.text.trim()) })).filter((o) => !o.ph);
   let shown = [], act = 0;
   const draw = () => {
     const q = inp.value.trim().toLowerCase();
@@ -1470,6 +1482,13 @@ function openSS(sel, btn, initial = "") {
     if (a) a.scrollIntoView({ block: "nearest" });
   };
   const place = () => {
+    if (sheet) {
+      const vv = window.visualViewport, vh = vv ? vv.height : innerHeight, top = vv ? vv.offsetTop : 0;
+      const fixed = pop.offsetHeight - list.offsetHeight;
+      list.style.maxHeight = Math.max(120, Math.min(vh * 0.62 - fixed, 420)) + "px";
+      pop.style.top = top + vh / 2 + "px";
+      return;
+    }
     const r = btn.getBoundingClientRect();
     const w = Math.max(r.width, 230);
     pop.style.width = w + "px";
@@ -1505,7 +1524,8 @@ function openSS(sel, btn, initial = "") {
   const outside = (e) => { if (!pop.contains(e.target) && !btn.contains(e.target)) closeSS(); };
   // Phones: the keyboard resizes and scrolls the page, so keep the list open and move it with the field instead of closing it.
   const scrolled = (e) => { if (!pop.contains(e.target)) { if (!btn.isConnected) closeSS(); else place(); } };
-  SSO = { pop, outside, scrolled, place };
+  SSO = { pop, outside, scrolled, place, dim };
+  if (sheet) $(".ss-x", pop).addEventListener("click", () => closeSS());
   document.addEventListener("mousedown", outside, true);
   window.addEventListener("scroll", scrolled, true);
   window.addEventListener("resize", place);
