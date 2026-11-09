@@ -516,9 +516,13 @@ function issueActs(i) {
 }
 V.issues = () => {
   const f = fv("issues");
-  const rows = S.d.issues.filter((i) => (!f.kind || i.kind === f.kind) && (!f.st || i.status === f.st) && (!f.h || i.hostelId === +f.h || i.toHostelId === +f.h) && inRange(i.at, f))
+  const base = S.d.issues.filter((i) => (!f.st || i.status === f.st) && (!f.h || i.hostelId === +f.h || i.toHostelId === +f.h) && inRange(i.at, f))
     .filter((i) => match(f.q, i.no, iName(i.itemId), hName(i.hostelId), i.toHostelId ? hName(i.toHostelId) : "", i.place, i.notes));
+  const rows = base.filter((i) => !f.kind || i.kind === f.kind);
   const n = (k) => rows.filter((i) => i.kind === k).length;
+  const nb = (k) => base.filter((i) => !k || i.kind === k).length;
+  const tabs = `<div class="segtabs" role="tablist">${[["", "All", "list"], ["transfer", "Transfer", "move"], ["repair", "Repair", "wrench"], ["damage", "Damage", "alert"]]
+    .map(([k, l, icn]) => `<button type="button" role="tab" class="${(f.kind || "") === k ? "on" : ""}" aria-selected="${(f.kind || "") === k}" data-act="ftab" data-key="issues" data-k="kind" data-v="${k}">${ic(icn)}${l}<span class="n">${nb(k)}</span></button>`).join("")}</div>`;
   return head("Issue register", "Every transfer, repair and damage entry", `${csvBtn("issues")}<button class="btn pri" data-act="issue">${ic("send")}<span class="l">Issue asset</span></button>`)
     + stats([
       { v: nf(rows.length), l: "Issues" },
@@ -528,9 +532,9 @@ V.issues = () => {
       { v: nf(rows.filter((i) => i.status === "pending").length), l: "Awaiting receipt", tone: "cyan" },
       { v: nf(rows.filter((i) => !["void", "rejected", "cancelled"].includes(i.status)).reduce((s, i) => s + i.qty, 0)), l: "Quantity issued", tone: "slate" },
     ])
+    + tabs
     + filterBar("issues", [
       { k: "q", type: "search", ph: "Search no., item, hostel or notes" },
-      { k: "kind", l: "Type", opts: [["transfer", "Transfer"], ["repair", "Repair"], ["damage", "Damage"]], all: "All types" },
       { k: "st", l: "Status", opts: Object.entries(STATUS).map(([k, v]) => [k, v.l]), all: "All statuses" },
       { k: "h", l: "Hostel", opts: S.d.hostels.map((h) => [h.id, h.name]), all: "All hostels", hide: !M.admin },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
@@ -1207,6 +1211,7 @@ const ACT = {
   dmgno: (el) => damageDecideForm(+el.dataset.id, false),
   sortdir: (el) => { const st = S.sort[el.dataset.key]; if (st) st.dir = -st.dir; if (el.dataset.key === "hist") drawHist(); else render(); },
   page: (el) => { S.page[el.dataset.key] = +el.dataset.p; render(); window.scrollTo({ top: 0, behavior: "smooth" }); },
+  ftab: (el) => { fv(el.dataset.key)[el.dataset.k] = el.dataset.v; S.page[el.dataset.key] = 0; render(); },
   clearf: (el) => { S.f[el.dataset.key] = {}; S.page[el.dataset.key] = 0; render(); },
   ledger: (el) => historyPopup(+el.dataset.i, el.dataset.h ? +el.dataset.h : M.admin ? 0 : M.myH),
   closehist: () => { S.hist = null; closeDlg(); },
