@@ -214,6 +214,34 @@ function issueRow(int $id): array
 }
 
 /* ---------- row shapes for the app ---------- */
+/** Clear message when a master name (or user email) is already taken, saying where to find the existing one. */
+function dupCheck(string $coll, ?int $id, array $d): void
+{
+    $map = [
+        'hostels' => ['ha_hostels', 'name', 'A hostel', 'Masters → Hostels', true],
+        'items' => ['ha_items', 'name', 'An item', 'Masters → Items', true],
+        'categories' => ['ha_categories', 'name', 'A category', 'Masters → Categories', false],
+        'units' => ['ha_units', 'name', 'A unit', 'Masters → Units', false],
+        'damagePlaces' => ['ha_damage_places', 'name', 'A damage destination', 'Masters → Damage destinations', false],
+        'users' => ['ha_users', 'email', 'A user', 'Masters → Users', true],
+    ];
+    if (!isset($map[$coll])) {
+        return;
+    }
+    [$table, $col, $what, $where, $hasActive] = $map[$coll];
+    $val = trim((string) ($d[$col] ?? ''));
+    if ($val === '') {
+        return;
+    }
+    $row = q("SELECT * FROM $table WHERE $col = ? AND id <> ?", [$val, $id ?? 0])->fetch();
+    if (!$row) {
+        return;
+    }
+    $label = $col === 'email' ? 'with the email "' . $row[$col] . '"' : 'named "' . $row[$col] . '"';
+    $inactive = $hasActive && isset($row['active']) && !(int) $row['active'];
+    fail("$what $label already exists" . ($inactive ? ' but is inactive. Open it in ' . $where . ', edit it and tick Active to use it again.' : '. You can find it in ' . $where . '.'));
+}
+
 function cronKey(): string
 {
     return substr(hash_hmac('sha256', 'hostel-assets-cron', DB_PASS), 0, 32);
@@ -358,6 +386,7 @@ try {
             $coll = (string) ($b['coll'] ?? '');
             $id = idOrNull($b['id'] ?? null);
             $d = is_array($b['data'] ?? null) ? $b['data'] : [];
+            dupCheck($coll, $id, $d);
             switch ($coll) {
                 case 'hostels':
                     $name = str($d['name'] ?? '', 120);
