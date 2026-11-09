@@ -211,7 +211,47 @@ function table(key, cols, rows, o = {}) {
   const body = shown.map((r) => `<tr>${cols.map((c) => `<td data-l="${esc(c.h)}" class="${c.num ? "num " : ""}${c.cls || ""}${c.h ? "" : " acts-td"}"><span>${c.html ? c.html(r) : esc(c.t(r))}</span></td>`).join("")}</tr>`).join("");
   const foot = o.foot ? `<tfoot><tr>${cols.map((c, i) => `<td data-l="${esc(c.h)}" class="${c.num ? "num" : ""}${c.foot || i === 0 ? "" : " nofoot"}">${c.foot ? esc(c.foot(rows)) : i === 0 ? "Total" : ""}</td>`).join("")}</tr></tfoot>` : "";
   const pager = !o.all && pages > 1 ? `<div class="pager"><span>Showing ${pg * PAGE + 1}–${pg * PAGE + shown.length} of ${nf(rows.length)}</span><span class="acts"><button class="btn sm" data-act="page" data-key="${key}" data-p="${pg - 1}" ${pg === 0 ? "disabled" : ""}>Previous</button><button class="btn sm" data-act="page" data-key="${key}" data-p="${pg + 1}" ${pg >= pages - 1 ? "disabled" : ""}>Next</button></span></div>` : "";
-  return `<div class="card">${o.title || ""}${sortBar}<div class="tw"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody>${foot}</table></div>${pager}</div>`;
+  const cards = shown.map((r) => rowCard(cols, r, o)).join("");
+  const cfoot = o.foot ? `<div class="rcfoot"><b>Total</b>${cols.filter((c) => c.foot).map((c) => `<span><i>${esc(c.h)}</i>${esc(c.foot(rows))}</span>`).join("")}</div>` : "";
+  return `<div class="card hascards">${o.title || ""}${sortBar}<div class="tw"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody>${foot}</table></div><div class="rcards">${cards}${cfoot}</div>${pager}</div>`;
+}
+// Mobile card for one row: coloured stripe, outline and tint by tone. o.card(r) gives a custom layout;
+// otherwise the Item (or first) column is the title, the bold number is the qty, and the rest are label/value pairs.
+function rowCard(cols, r, o) {
+  const cell = (c) => (c.html ? c.html(r) : esc(c.t(r)));
+  const actC = cols.find((c) => !c.h);
+  const acts = actC ? cell(actC) : "";
+  const actsHtml = acts && /<button/.test(acts) ? `<div class="rca">${acts}</div>` : "";
+  if (o.card) {
+    const k = o.card(r);
+    const ex = (k.extra || []).filter(([, v]) => v !== "" && v != null);
+    return `<div class="rc t-${k.tone || "blue"}"><div class="rc1"><span class="rct">${k.title}</span>${k.qty != null ? `<span class="rcq">${k.qty}</span>` : ""}</div>`
+      + (k.sub ? `<div class="rcs">${k.sub}</div>` : "")
+      + (k.meta || k.status ? `<div class="rc3"><span>${k.meta || ""}</span><span class="rcst">${k.status || ""}</span></div>` : "")
+      + (ex.length ? `<div class="rcg">${ex.map(([l, v]) => `<span>${esc(l)}</span><b>${v}</b>`).join("")}</div>` : "")
+      + actsHtml + `</div>`;
+  }
+  const named = cols.filter((c) => c.h);
+  const tC = named.find((c) => c.h === "Item") || named[0];
+  const qC = named.find((c) => c !== tC && (/\bstrong\b/.test(c.cls || "") || c.h === "Qty"));
+  const rest = named.filter((c) => c !== tC && c !== qC).map((c) => [c.h, cell(c)]).filter(([, v]) => String(v).replace(/<[^>]*>/g, "").trim() !== "" && v !== "0" || /class="b /.test(v));
+  return `<div class="rc t-${o.tone ? o.tone(r) : "blue"}"><div class="rc1"><span class="rct">${cell(tC)}</span>${qC ? `<span class="rcq"><i>${esc(qC.h)}</i> ${cell(qC)}</span>` : ""}</div>`
+    + (rest.length ? `<div class="rcg">${rest.map(([l, v]) => `<span>${esc(l)}</span><b>${v}</b>`).join("")}</div>` : "")
+    + actsHtml + `</div>`;
+}
+// Card layout shared by transfer, repair and damage lists.
+function issueCard(i, extra = []) {
+  const to = i.kind === "transfer" ? hName(i.toHostelId) : i.place || "";
+  const recv = i.kind === "transfer" && i.receivedQty != null ? [["Received", recvHtml(i)]] : [];
+  return {
+    tone: ISSUE_KIND[i.kind].c,
+    title: `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(iName(i.itemId))}</span>`,
+    qty: `${nf(i.qty)} <small>${esc(iUnit(i.itemId))}</small>`,
+    sub: `${esc(hName(i.hostelId))}${to ? " → " + esc(to) : ""}`,
+    meta: `<span class="mono">${esc(i.no)}</span> · ${fmtD(i.at)} · ${esc(uName(i.createdBy))}`,
+    status: i.kind === "repair" && isOverdue(i) ? `<span class="b red">Overdue</span>` : badge(issueStatus(i)),
+    extra: recv.concat(extra, [["Notes", esc([i.notes, i.decisionNote && "Note: " + i.decisionNote].filter(Boolean).join(" · "))]]),
+  };
 }
 function downloadCSV(key) {
   const c = CSV[key];
@@ -360,7 +400,7 @@ V.ledger = () => {
       { v: nf(outQ), l: "Quantity out", tone: "red" },
       { v: nf(balance), l: f.to ? `Balance on ${fmtD(f.to)}` : "Current balance", tone: "cyan" },
     ])
-    + table("ledger", cols, shown, { csv: `ledger-${(it.name || "item").replace(/\W+/g, "-")}${hid ? "-" + hName(hid).replace(/\W+/g, "-") : ""}`, all: 1,
+    + table("ledger", cols, shown, { tone: (t) => (KIND[t.kind] || {}).c || "slate", csv: `ledger-${(it.name || "item").replace(/\W+/g, "-")}${hid ? "-" + hName(hid).replace(/\W+/g, "-") : ""}`, all: 1,
       title: `<div class="lhead"><div class="ic blue" style="width:40px;height:40px;border-radius:11px;display:grid;place-items:center">${ic("box")}</div><div><h2>${esc(it.name || "")}</h2><div class="meta">${esc(iCat(item))} · Unit: ${esc(it.unit || "")} · ${esc(hid ? hName(hid) : M.admin ? "All hostels" : hName(M.myH))}</div></div></div>`,
       empty: "No entries for this item yet." });
 };
@@ -430,7 +470,7 @@ function drawHist() {
         { v: nf(m.balance), l: f.to ? `Balance on ${fmtD(f.to)}` : "Current balance", tone: "cyan" },
       ])}
       <div class="filters">${hostelSel}<label class="flab">From<input type="date" data-hist="from" value="${esc(f.from || "")}"></label><label class="flab">To<input type="date" data-hist="to" value="${esc(f.to || "")}"></label><div class="search">${ic("search")}<input class="inp" data-hist="q" value="${esc(f.q || "")}" placeholder="Search entries"></div></div>
-      ${table("hist", m.cols, m.shown, { csv: `history-${(it.name || "item").replace(/\W+/g, "-")}${hid ? "-" + hName(hid).replace(/\W+/g, "-") : ""}`, all: 1, empty: "No entries for this item yet." })}
+      ${table("hist", m.cols, m.shown, { tone: (t) => (KIND[t.kind] || {}).c || "slate", csv: `history-${(it.name || "item").replace(/\W+/g, "-")}${hid ? "-" + hName(hid).replace(/\W+/g, "-") : ""}`, all: 1, empty: "No entries for this item yet." })}
     </div>
     <div class="df"><button class="btn dl" data-act="csv" data-key="hist" title="Download as CSV">${ic("download")}Download</button><button class="btn pri" data-act="closehist">Close</button></div>`;
   if (keep) { const el = box.querySelector(`[data-hist="${keep}"]`); if (el) { el.focus(); if (el.type !== "date") { const n = el.value.length; try { el.setSelectionRange(n, n); } catch (_) {} } } }
@@ -469,7 +509,7 @@ V.stock = () => {
       { k: "c", l: "Category", opts: catOpts(), all: "All categories" },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
     ])
-    + table("stock", cols, rows, { csv: "stock-in", empty: "No stock entered yet." });
+    + table("stock", cols, rows, { card: (t) => ({ tone: t.kind === "opening" ? "blue" : "green", title: `<span class="lnk" data-act="ledger" data-h="${t.hostelId}" data-i="${t.itemId}">${esc(iName(t.itemId))}</span>`, qty: `${nf(t.qty)} <small>${esc(iUnit(t.itemId))}</small>`, sub: esc(hName(t.hostelId)), meta: `${fmtD(t.at)} · ${esc(uName(t.createdBy))}`, status: badge(KIND[t.kind]), extra: [["Notes", esc(t.notes || "")]] }), csv: "stock-in", empty: "No stock entered yet." });
 };
 
 /* ---------- issue register ---------- */
@@ -538,7 +578,7 @@ V.issues = () => {
       { k: "h", l: "Hostel", opts: S.d.hostels.map((h) => [h.id, h.name]), all: "All hostels", hide: !M.admin },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
     ], tabs)
-    + table("issues", issueCols(), rows, { csv: "issue-register", empty: "No issues yet." });
+    + table("issues", issueCols(), rows, { card: (i) => issueCard(i), csv: "issue-register", empty: "No issues yet." });
 };
 
 /* ---------- approvals ---------- */
@@ -581,7 +621,7 @@ function approvalsView(key) {
       { k: "h", l: "Hostel", opts: S.d.hostels.map((h) => [h.id, h.name]), all: "All hostels", hide: !M.admin },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
     ])
-    + table(key, cols, rows, { csv: A.csv, emptyIcon: "check", empty: A.empty });
+    + table(key, cols, rows, { card: (i) => issueCard(i), csv: A.csv, emptyIcon: "check", empty: A.empty });
 }
 Object.keys(APPROVAL_VIEWS).forEach((k) => (V[k] = () => approvalsView(k)));
 
@@ -612,7 +652,7 @@ V.damage = () => {
       { k: "h", l: "Hostel", opts: hostelOpts(), all: "All hostels", hide: !M.admin },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
     ])
-    + table("damage", cols, rows, { csv: "damage-approvals", emptyIcon: "alert", empty: "No damage waiting for approval." });
+    + table("damage", cols, rows, { card: (i) => issueCard(i), csv: "damage-approvals", emptyIcon: "alert", empty: "No damage waiting for approval." });
 };
 function damageDecideForm(id, approve) {
   const i = S.d.issues.find((x) => x.id === id);
@@ -678,7 +718,7 @@ function repairsView(key, pendingOnly) {
       { k: "h", l: "Hostel", opts: hostelOpts(), all: "All hostels", hide: !M.admin },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
     ])
-    + table(key, cols, rows, { csv: pendingOnly ? "repairs-pending" : "repairs-all", emptyIcon: "wrench", empty: st === "open" ? "Nothing is at repair right now." : "No repairs to show." });
+    + table(key, cols, rows, { card: (i) => issueCard(i, [["Returned", nf(i.returnedQty)], ["Still out", `<b>${nf(outstanding(i))}</b>`], ["Not repairable", i.scrappedQty ? nf(i.scrappedQty) : ""], ["Expected back", i.expectedAt ? fmtD(i.expectedAt) : ""]]), csv: pendingOnly ? "repairs-pending" : "repairs-all", emptyIcon: "wrench", empty: st === "open" ? "Nothing is at repair right now." : "No repairs to show." });
 }
 V.repairs = () => repairsView("repairs", true);
 V.allrepairs = () => repairsView("allrepairs", false);
@@ -719,7 +759,7 @@ V.damaged = () => {
       { k: "p", l: "Sent to", opts: places.map((p) => [p, p]), all: "Any destination" },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
     ])
-    + table("damaged", cols, rows, { csv: "damaged", emptyIcon: "alert", empty: "No damaged items recorded." });
+    + table("damaged", cols, rows, { card: (t) => ({ tone: "red", title: `<span class="lnk" data-act="ledger" data-h="${t.hostelId}" data-i="${t.itemId}">${esc(iName(t.itemId))}</span>`, qty: `${nf(t.qty)} <small>${esc(iUnit(t.itemId))}</small>`, sub: esc(hName(t.hostelId)) + (t.party ? " → " + esc(t.party) : ""), meta: `${issueNo(t.issueId) ? `<span class="mono">${esc(issueNo(t.issueId))}</span> · ` : ""}${fmtD(t.at)} · ${esc(uName(t.createdBy))}`, extra: [["Category", esc(iCat(t.itemId))], ["Notes", esc(t.notes || "")]] }), csv: "damaged", emptyIcon: "alert", empty: "No damaged items recorded." });
 };
 
 /* ---------- warranties ---------- */
@@ -757,7 +797,7 @@ V.warranties = () => {
       { k: "c", l: "Category", opts: catOpts(), all: "All categories" },
       { k: "h", l: "Hostel", opts: hostelOpts(), all: "All hostels", hide: !M.admin },
     ])
-    + table("warranties", cols, rows, { csv: "warranties", emptyIcon: "shield", empty: "No warranties yet." });
+    + table("warranties", cols, rows, { tone: (w) => (w.daysLeft <= 30 ? "red" : w.daysLeft <= 90 ? "amber" : "green"), csv: "warranties", emptyIcon: "shield", empty: "No warranties yet." });
 };
 
 /* ---------- masters (Admin) ---------- */
