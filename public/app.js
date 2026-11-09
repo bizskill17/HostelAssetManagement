@@ -50,6 +50,8 @@ const P = {
   eyeoff: '<path d="M3 3l18 18"/><path d="M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/>',
+  table: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 10v10"/>',
+  cards: '<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/>',
   bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
 };
 const ic = (n, cls = "i") => `<svg class="${cls}" viewBox="0 0 24 24">${P[n] || ""}</svg>`;
@@ -218,7 +220,7 @@ function table(key, cols, rows, o = {}) {
   // o.nocards: keep the table on phones too (Warranties and Masters).
   const cards = o.nocards ? "" : shown.map((r) => rowCard(cols, r, o)).join("");
   const cfoot = o.foot ? `<div class="rcfoot"><b>Total</b>${cols.filter((c) => c.foot).map((c) => `<span><i>${esc(c.h)}</i>${esc(c.foot(rows))}</span>`).join("")}</div>` : "";
-  return `<div class="card${o.nocards ? "" : " hascards"}">${o.title || ""}${sortBar}<div class="tw"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody>${foot}</table></div>${o.nocards ? "" : `<div class="rcards">${cards}${cfoot}</div>`}${pager}</div>`;
+  return `<div class="card${o.nocards ? "" : " hascards" + (TMODE[key] === "table" ? " astable" : "")}" data-tkey="${key}">${o.title || ""}${sortBar}<div class="tw"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody>${foot}</table></div>${o.nocards ? "" : `<div class="rcards">${cards}${cfoot}</div>`}${pager}</div>`;
 }
 // Mobile card for one row: coloured stripe, outline and tint by tone. o.card(r) gives a custom layout;
 // otherwise the Item (or first) column is the title, the bold number is the qty, and the rest are label/value pairs.
@@ -1243,7 +1245,16 @@ function masterForm(key, id) {
 }
 
 /* =================================================================== actions */
+// Cards or table on phones, remembered per list on this device.
+let TMODE = {};
+try { TMODE = JSON.parse(localStorage.getItem("ham_tmode") || "{}") || {}; } catch (_) {}
 const ACT = {
+  tmode: (el) => {
+    const k = el.dataset.key;
+    if (TMODE[k] === "table") delete TMODE[k]; else TMODE[k] = "table";
+    try { localStorage.setItem("ham_tmode", JSON.stringify(TMODE)); } catch (_) {}
+    render();
+  },
   issue: (el) => issueForm(el.dataset.kind || "transfer"),
   stockin: () => stockForm(),
   csv: (el) => downloadCSV(el.dataset.key),
@@ -1351,6 +1362,12 @@ function render() {
   const ph = $("#view > .ph");
   $("#topPage").textContent = ph ? $("h1", ph).textContent : "";
   $("#topActs").innerHTML = ph ? $(".acts", ph).innerHTML : "";
+  // Phones: list pages shown as cards get a top-bar button to switch to the table and back.
+  const hc = $("#view .hascards");
+  if (hc) {
+    const tbl = hc.classList.contains("astable");
+    $("#topActs").insertAdjacentHTML("afterbegin", `<button class="btn vtog" data-act="tmode" data-key="${hc.dataset.tkey}" title="${tbl ? "Show as cards" : "Show as table"}" aria-label="${tbl ? "Show as cards" : "Show as table"}">${ic(tbl ? "cards" : "table")}</button>`);
+  }
   if (keep) {
     const el = document.querySelector(`[data-fkey="${keep.k}"][data-f="${keep.f}"]`);
     if (el) { el.focus(); try { el.setSelectionRange(keep.pos, keep.pos); } catch (_) {} }
