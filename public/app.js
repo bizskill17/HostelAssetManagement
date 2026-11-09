@@ -915,7 +915,7 @@ V.settings = () => {
   return head("Settings")
     + `<div class="card" style="max-width:760px"><div class="ch"><h3>Telegram notifications</h3><span class="sub">${hostelGroups ? `Main group + ${hostelGroups} hostel group${hostelGroups > 1 ? "s" : ""}` : "Main group"}</span></div>
     <form id="setForm" class="db" style="padding:18px 20px">
-      <div class="fld"><label class="chk"><input type="checkbox" name="telegramOn" ${s.telegramOn ? "checked" : ""}> Send Telegram notifications</label><div class="help">Create a bot with <b>@BotFather</b>, add it to your group, then paste its token and the group's chat ID (it starts with <b>-100</b>). Each hostel can also have its own group: set it in Masters → Hostels.</div></div>
+      <div class="fld"><label class="chk"><input type="checkbox" name="telegramOn" ${s.telegramOn ? "checked" : ""}> Send Telegram notifications</label></div>
       <div class="fld half"><label>Bot token</label><input name="telegramToken" type="password" autocomplete="new-password" placeholder="${s.telegramTokenSet ? "Saved — leave blank to keep" : "123456:ABC…"}"></div>
       <div class="fld half"><label>Main group chat ID</label><input name="telegramChat" value="${esc(s.telegramChat)}" placeholder="-1001234567890"><div class="help">Gets every message from all hostels.</div></div>
       <div class="fld"><label>App address (added as a link in messages)</label><input name="appUrl" value="${esc(s.appUrl || location.origin + location.pathname.replace(/index\.html$/, ""))}"></div>
@@ -925,11 +925,7 @@ V.settings = () => {
       <div class="err" id="setErr"></div>
       <div class="fld" style="flex-direction:row;gap:8px;flex-wrap:wrap"><button class="btn pri" type="submit">Save settings</button><button class="btn" type="button" data-act="testNotify">${ic("bell")}Send a test</button><button class="btn" type="button" data-act="dailyNow">${ic("clock")}Send daily messages now</button>${s.telegramTokenSet ? `<button class="btn bad" type="button" data-act="clearToken">Remove bot token</button>` : ""}</div>
       <div id="testOut" class="fld"></div>
-      <div class="fld" style="border-top:1px solid var(--line2);padding-top:14px"><label>Cron job (recommended)</label><div class="help">Daily messages also go out when someone opens the app after the set time. To send them even if nobody opens the app, add a cron job in Hostinger hPanel → Advanced → Cron Jobs, type <b>PHP</b>, every hour, with this command:</div>
-        <input readonly value="${esc(s.cronCmd || "")}" onclick="this.select()" style="font-family:var(--mono,monospace);font-size:12px">
-        <div class="help">Or as a URL, if your cron needs one: <span class="mono" style="word-break:break-all">${esc(s.cronUrl || "")}</span></div></div>
-    </form></div>
-    <div class="card" style="max-width:760px"><div class="ch"><h3>Sample data</h3><span class="sub">4 hostels with stock, transfers, repairs and warranties to try things out</span></div><div style="padding:16px 20px"><button class="btn" data-act="seed">${ic("box")}Load sample data</button></div></div>`;
+    </form></div>`;
 };
 
 /* =================================================================== forms */
