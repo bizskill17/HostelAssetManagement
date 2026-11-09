@@ -380,7 +380,7 @@ V.inventory = () => {
       { k: "stock", l: "Stock", opts: [["in", "In stock"], ["zero", "Zero stock"], ["moving", "At repair / transfer pending"]], all: "Any stock" },
       { k: "view", l: "View", opts: [["all", "All hostels combined"]], all: "By hostel", hide: !M.admin },
     ])
-    + table("inventory", cols, rows, { csv: "inventory", foot: 1, empty: "No stock yet. Add opening stock to get started." });
+    + table("inventory", cols, rows, { nocards: 1, csv: "inventory", foot: 1, empty: "No stock yet. Add opening stock to get started." });
 };
 
 /* ---------- item ledger ---------- */
