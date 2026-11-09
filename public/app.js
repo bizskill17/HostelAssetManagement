@@ -1342,7 +1342,8 @@ function renderShell() {
   }
   $("#nav").innerHTML = html + (open ? "</div>" : "");
   $("#meBox").innerHTML = `<span class="av">${esc(initials(S.me.name))}</span><div class="t"><b>${esc(S.me.name)}</b><span>${esc(S.me.role)}${M.admin ? "" : " · " + esc(hName(M.myH))}</span></div><button class="iconbtn" title="Log out" data-act="logout">${ic("logout")}</button>`;
-  $("#orgLine").textContent = M.admin ? `${S.d.hostels.length} hostels` : hName(M.myH);
+  $("#orgLine").textContent = M.admin ? "" : hName(M.myH);
+  $("#orgLine").hidden = M.admin;
   const inc = M.incoming.length;
   const b = (v, l, i) => `<a href="#${v}" class="${S.view === v ? "on" : ""}"><span class="ico">${ic(i)}</span>${l}${v === "transfer" && inc ? `<span class="dot">${inc}</span>` : ""}</a>`;
   $("#bnav").innerHTML = b("home", "Home", "home") + b("inventory", "Inventory", "box") + `<a class="mid" data-act="issue"><span class="c">${ic("plus")}</span>Issue</a>` + b("transfer", "Approvals", "check") + `<a data-act="menu"><span class="ico">${ic("menu")}</span>More</a>`;
