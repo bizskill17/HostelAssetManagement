@@ -196,6 +196,10 @@ function table(key, cols, rows, o = {}) {
   if (st && cols[st.i]) {
     const c = cols[st.i];
     rows = rows.slice().sort((a, b) => { const x = c.t(a), y = c.t(b); const r = c.num ? (Number(x) || 0) - (Number(y) || 0) : cmp(x, y); return st.dir * r; });
+  } else if (!o.all) {
+    // Default order: newest date first (ties: latest entry first). Ledgers (o.all) keep date order for the running balance.
+    const dc = cols.find((c) => c.h === "Date" || c.h === "Sent on");
+    if (dc) rows = rows.slice().sort((a, b) => cmp(dc.t(b), dc.t(a)) || (b.createdAt || 0) - (a.createdAt || 0) || (b.id || 0) - (a.id || 0));
   }
   if (!rows.length) return `<div class="card">${o.title || ""}<div class="empty">${ic(o.emptyIcon || "inbox")}<div>${esc(o.empty || "Nothing to show yet.")}</div></div></div>`;
   const pages = Math.max(1, Math.ceil(rows.length / PAGE));
