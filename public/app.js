@@ -618,11 +618,10 @@ function damageDecideForm(id, approve) {
   const i = S.d.issues.find((x) => x.id === id);
   if (!i) return;
   const u = iUnit(i.itemId);
-  const info = { k: "info", type: "info", html: () => `${esc(hName(i.hostelId))} reported <b>${nf(i.qty)} ${esc(u)}</b> of ${esc(iName(i.itemId))} as damaged on ${fmtD(i.at)}${i.place ? `, to be sent to <b>${esc(i.place)}</b>` : ""}. Reported by ${esc(uName(i.createdBy))}.${i.notes ? `<br>“${esc(i.notes)}”` : ""}` };
   if (approve) {
     openForm({
-      title: "Approve damage", sub: `<span class="mono">${esc(i.no)}</span> · ${esc(iName(i.itemId))} · ${esc(hName(i.hostelId))}`,
-      fields: [info,
+      title: "Approve damage", sub: `${esc(iName(i.itemId))} · ${esc(hName(i.hostelId))}`,
+      fields: [{ k: "reported", l: "Reported qty", type: "text", half: 1, val: String(i.qty), ro: 1 },
         { k: "qty", l: "Approved qty", type: "number", req: 1, half: 1, val: String(i.qty),
           help: (v) => { const q = +v.qty; if (v.qty === "" || isNaN(q)) return ""; if (q > i.qty) return { t: `Can't be more than ${nf(i.qty)}`, c: "warn" }; if (q < i.qty && q > 0) return { t: `${nf(i.qty - q)} stay in stock`, c: "warn" }; return ""; } },
         { k: "note", l: "Note", type: "textarea", ph: "Reason for approving fewer, remarks…" }],
@@ -631,8 +630,8 @@ function damageDecideForm(id, approve) {
     });
   } else {
     openForm({
-      title: "Reject damage", sub: `<span class="mono">${esc(i.no)}</span> · ${esc(iName(i.itemId))} · ${esc(hName(i.hostelId))}`, danger: true,
-      fields: [info, { k: "note", l: "Reason", type: "textarea", req: 1, ph: "Tell the hostel why" }],
+      title: "Reject damage", sub: `${esc(iName(i.itemId))} · ${esc(hName(i.hostelId))}`, danger: true,
+      fields: [{ k: "reported", l: "Reported qty", type: "text", val: `${nf(i.qty)} ${u}`, ro: 1 }, { k: "note", l: "Reason", type: "textarea", req: 1, ph: "Tell the hostel why" }],
       submit: "Reject",
       onSubmit: async (v) => { await api("damage.decide", { id, decision: "reject", note: v.note }); return `${i.no} rejected`; },
     });
@@ -1149,9 +1148,9 @@ function returnForm(id) {
   if (!i) return;
   const out = outstanding(i);
   openForm({
-    title: "Record return from repair", sub: `<span class="mono">${esc(i.no)}</span> · ${esc(iName(i.itemId))} · ${esc(hName(i.hostelId))}`,
+    title: "Record return from repair", sub: `${esc(iName(i.itemId))} · ${esc(hName(i.hostelId))}`,
     fields: [
-      { k: "info", type: "info", html: () => `Sent <b>${nf(i.qty)}</b> on ${fmtD(i.at)}${i.place ? " to <b>" + esc(i.place) + "</b>" : ""}. Already back: <b>${nf(i.returnedQty)}</b>, not repairable: <b>${nf(i.scrappedQty)}</b>. <b>${nf(out)}</b> still at repair.` },
+      { k: "out", l: "Still at repair", type: "text", val: `${nf(out)} ${iUnit(i.itemId)}`, ro: 1 },
       { k: "okQty", l: "Repaired and returned", type: "number", half: 1, val: String(out), help: "Goes back into stock." },
       { k: "scrapQty", l: "Not repairable", type: "number", half: 1, val: "0", help: M.admin ? "Counted as damaged." : "Sent to an Admin for damage approval." },
       { k: "place", l: "Not repairable items sent to", type: "select", blank: "— Not sent anywhere —", opts: () => S.d.damagePlaces.map((p) => [p.name, p.name]), show: (v) => +v.scrapQty > 0 },
