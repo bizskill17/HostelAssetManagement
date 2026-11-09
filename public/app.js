@@ -1429,7 +1429,8 @@ function closeSS() {
   SSO.pop.remove();
   document.removeEventListener("mousedown", SSO.outside, true);
   window.removeEventListener("scroll", SSO.scrolled, true);
-  window.removeEventListener("resize", closeSS);
+  window.removeEventListener("resize", SSO.place);
+  if (window.visualViewport) visualViewport.removeEventListener("resize", SSO.place);
   SSO = null;
 }
 const hl = (t, q) => { if (!q) return esc(t); const i = t.toLowerCase().indexOf(q); return i < 0 ? esc(t) : esc(t.slice(0, i)) + "<b>" + esc(t.slice(i, i + q.length)) + "</b>" + esc(t.slice(i + q.length)); };
@@ -1459,7 +1460,11 @@ function openSS(sel, btn, initial = "") {
     const w = Math.max(r.width, 230);
     pop.style.width = w + "px";
     pop.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + "px";
-    const h = pop.offsetHeight, below = innerHeight - r.bottom;
+    const vh = window.visualViewport ? visualViewport.height : innerHeight;
+    // Shrink the list to the room left (the phone keyboard can take half the screen).
+    const room = Math.max(vh - r.bottom, r.top) - 12, sh = $(".ss-s", pop).offsetHeight;
+    list.style.maxHeight = Math.max(90, Math.min(260, room - sh - 10)) + "px";
+    const h = pop.offsetHeight, below = vh - r.bottom;
     if (below < h + 8 && r.top > below) { pop.style.top = ""; pop.style.bottom = innerHeight - r.top + 4 + "px"; }
     else { pop.style.bottom = ""; pop.style.top = r.bottom + 4 + "px"; }
   };
@@ -1484,15 +1489,18 @@ function openSS(sel, btn, initial = "") {
   list.addEventListener("mousedown", (e) => e.preventDefault());
   list.addEventListener("click", (e) => { const o = e.target.closest(".ss-o"); if (o) pick(shown[+o.dataset.k]); });
   const outside = (e) => { if (!pop.contains(e.target) && !btn.contains(e.target)) closeSS(); };
-  const scrolled = (e) => { if (!pop.contains(e.target)) closeSS(); };
-  SSO = { pop, outside, scrolled };
+  // Phones: the keyboard resizes and scrolls the page, so keep the list open and move it with the field instead of closing it.
+  const scrolled = (e) => { if (!pop.contains(e.target)) { if (!btn.isConnected) closeSS(); else place(); } };
+  SSO = { pop, outside, scrolled, place };
   document.addEventListener("mousedown", outside, true);
   window.addEventListener("scroll", scrolled, true);
-  window.addEventListener("resize", closeSS);
+  window.addEventListener("resize", place);
+  if (window.visualViewport) visualViewport.addEventListener("resize", place);
   inp.value = initial;
   act = Math.max(0, initial ? 0 : opts.findIndex((o) => o.i === sel.selectedIndex));
   draw(); place();
-  inp.focus();
+  // On touch screens don't pop the keyboard up straight away; tap the search box to type.
+  if (!matchMedia("(pointer: coarse)").matches || initial) inp.focus();
 }
 function enhanceSelect(sel) {
   if (sel.dataset.ss) return;
