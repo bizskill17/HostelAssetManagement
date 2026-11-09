@@ -195,6 +195,9 @@ tfoot td{background:#f8f9fc;font-weight:700;border-top:1px solid var(--line)}
 .b{display:inline-flex;align-items:center;padding:3px 9px;border-radius:99px;font-size:12px;font-weight:600;white-space:nowrap;background:var(--slate-s);color:var(--ink2)}
 .b.green{background:var(--green-s);color:var(--green)}.b.amber{background:var(--amber-s);color:var(--amber)}.b.red{background:var(--red-s);color:var(--red)}
 .b.violet{background:var(--violet-s);color:var(--violet)}.b.blue{background:var(--brand-s);color:var(--brand-d)}.b.cyan{background:var(--cyan-s);color:var(--cyan)}
+/* Inside tables, statuses and types are coloured text only (no pill background). */
+td .b,td .b.green,td .b.amber,td .b.red,td .b.violet,td .b.blue,td .b.cyan{background:none;padding:0;border-radius:0;white-space:normal;font-size:13px}
+td .b{color:var(--ink2)}
 .qin{color:var(--green);font-weight:600}.qout{color:var(--red);font-weight:600}
 
 /* ---------- dashboard ---------- */
