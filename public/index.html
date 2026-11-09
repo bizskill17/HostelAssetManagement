@@ -111,6 +111,14 @@ svg.i{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-widt
 .segtabs button.on{background:#fff;color:var(--ink);border-color:var(--line);box-shadow:0 1px 3px rgba(20,26,46,.08)}
 .segtabs .n{font-size:12px;font-weight:600;padding:1px 8px;border-radius:99px;background:#fff;color:var(--muted)}
 .segtabs .on .n{background:var(--brand-s);color:var(--brand-d)}
+/* Issue register type tabs: solid colour per type (same as the list rows); the selected one gets a ring. */
+.segtabs.coltabs{background:none;border:0;padding:3px;gap:6px}
+.coltabs button,.coltabs button:hover{color:#fff;border:0}
+.segtabs.coltabs button.tk-all{background:#2F54EB}.segtabs.coltabs button.tk-transfer{background:#7C3AED}.segtabs.coltabs button.tk-repair{background:#D97706}.segtabs.coltabs button.tk-damage{background:#DC2626}
+.coltabs button:not(.on){opacity:.82}.coltabs button:not(.on):hover{opacity:1}
+.coltabs button.on{color:#fff;box-shadow:0 0 0 2px #fff,0 0 0 4px var(--rc)}
+.coltabs .tk-all{--rc:#2F54EB}.coltabs .tk-transfer{--rc:#7C3AED}.coltabs .tk-repair{--rc:#D97706}.coltabs .tk-damage{--rc:#DC2626}
+.coltabs .n,.coltabs .on .n{background:rgba(255,255,255,.25);color:#fff}
 /* ---------- filters ---------- */
 .filters{display:flex;gap:9px;flex-wrap:wrap;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px;margin-bottom:12px;box-shadow:var(--sh)}
 .search{position:relative;flex:1 1 220px;min-width:180px}

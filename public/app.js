@@ -569,8 +569,8 @@ V.issues = () => {
   const rows = base.filter((i) => !f.kind || i.kind === f.kind);
   const n = (k) => rows.filter((i) => i.kind === k).length;
   const nb = (k) => base.filter((i) => !k || i.kind === k).length;
-  const tabs = `<div class="segtabs" role="tablist">${[["", "All", "list"], ["transfer", "Transfer", "move"], ["repair", "Repair", "wrench"], ["damage", "Damage", "alert"]]
-    .map(([k, l, icn]) => `<button type="button" role="tab" class="${(f.kind || "") === k ? "on" : ""}" aria-selected="${(f.kind || "") === k}" data-act="ftab" data-key="issues" data-k="kind" data-v="${k}">${ic(icn)}${l}<span class="n">${nb(k)}</span></button>`).join("")}</div>`;
+  const tabs = `<div class="segtabs coltabs" role="tablist">${[["", "All", "list"], ["transfer", "Transfer", "move"], ["repair", "Repair", "wrench"], ["damage", "Damage", "alert"]]
+    .map(([k, l, icn]) => `<button type="button" role="tab" class="tk-${k || "all"}${(f.kind || "") === k ? " on" : ""}" aria-selected="${(f.kind || "") === k}" data-act="ftab" data-key="issues" data-k="kind" data-v="${k}">${ic(icn)}${l}<span class="n">${nb(k)}</span></button>`).join("")}</div>`;
   return head("Issue register", "Every transfer, repair and damage entry", `${csvBtn("issues")}<button class="btn pri" data-act="issue">${ic("plus")}<span class="l">Issue asset</span></button>`)
     + stats([
       { v: nf(rows.length), l: "Issues" },
