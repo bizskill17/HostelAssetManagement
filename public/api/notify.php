@@ -190,6 +190,19 @@ function notifyStockIn(int $hid, int $iid, int $qty, string $party, string $note
 
 /* ---------------------------------------------------------------- daily messages */
 
+/** "1. …\n2. …" — long lists are cut at 25 lines so the message stays under Telegram's size limit. */
+function numList(array $rows, int $max = 25): string
+{
+    $out = [];
+    foreach (array_slice(array_values($rows), 0, $max) as $k => $r) {
+        $out[] = ($k + 1) . '. ' . $r;
+    }
+    if (count($rows) > $max) {
+        $out[] = '…and ' . (count($rows) - $max) . ' more';
+    }
+    return implode("\n", $out);
+}
+
 /** Runs the daily messages once per day, after the time in Settings. Returns what was sent. */
 function runDaily(bool $force = false): array
 {
@@ -226,11 +239,11 @@ function runDaily(bool $force = false): array
         if (!$lines || !tgEventOn($s, $event)) {
             return;
         }
-        $post($main, "$title — " . count($lines) . "</b>\n" . implode("\n", array_column($lines, 1)) . $foot);
+        $post($main, "$title — " . count($lines) . "</b>\n" . numList(array_column($lines, 1)) . $foot);
         foreach ($hostels as $hid => $hr) {
             $mine = array_values(array_filter($lines, fn($l) => $l[0] === $hid));
             if ($mine && $hr['tg_chat'] !== '' && $hr['tg_chat'] !== $main) {
-                $post($hr['tg_chat'], "$title — " . count($mine) . "</b>\n" . implode("\n", array_column($mine, 1)) . $foot);
+                $post($hr['tg_chat'], "$title — " . count($mine) . "</b>\n" . numList(array_column($mine, 1)) . $foot);
             }
         }
     };
@@ -241,7 +254,7 @@ function runDaily(bool $force = false): array
         $item = itemRow((int) $i['item_id']);
         $out = (int) $i['qty'] - (int) $i['returned_qty'] - (int) $i['scrapped_qty'];
         $late = (int) ((strtotime($today) - strtotime($i['expected_at'])) / 86400);
-        $over[] = [(int) $i['hostel_id'], '• ' . issueNo($i) . ' ' . h($item['name'] ?? '') . " × $out · " . $hn($i['hostel_id'])
+        $over[] = [(int) $i['hostel_id'], issueNo($i) . ' ' . h($item['name'] ?? '') . " × $out · " . $hn($i['hostel_id'])
             . ($i['place'] !== '' ? ' · ' . h($i['place']) : '') . ' · due ' . date('d/m', strtotime($i['expected_at'])) . " ($late day" . ($late === 1 ? '' : 's') . ' late)'];
     }
     $fanOut('daily_overdue', '⏰ <b>Repairs overdue', $over);
@@ -255,20 +268,29 @@ function runDaily(bool $force = false): array
         }
         $label = $w['title'] !== '' ? $w['title'] : (itemRow($w['item_id'] === null ? null : (int) $w['item_id'])['name'] ?? 'Warranty');
         $when = $days === 0 ? 'expires today' : "$days day" . ($days === 1 ? '' : 's') . ' left (' . dmy($w['expiry_at']) . ')';
-        $warr[] = [(int) $w['hostel_id'], '• ' . h($label) . ' · ' . ($w['hostel_id'] ? $hn($w['hostel_id']) : 'All hostels')
+        $warr[] = [(int) $w['hostel_id'], h($label) . ' · ' . ($w['hostel_id'] ? $hn($w['hostel_id']) : 'All hostels')
             . ($w['warranty_no'] !== '' ? ' · ' . h($w['warranty_no']) : '') . " — $when"];
     }
     $fanOut('daily_warranty', '🛡️ <b>Warranties expiring', $warr);
 
-    // Morning summary (main group only)
+    // Morning summary (main group only): what is waiting, each as a numbered list.
     if (tgEventOn($s, 'daily_summary') && $main !== '') {
-        $c = fn($sql, $p = []) => (int) q($sql, $p)->fetchColumn();
-        $tr = $c("SELECT COUNT(*) FROM ha_issues WHERE kind = 'transfer' AND status = 'pending'");
-        $dm = $c("SELECT COUNT(*) FROM ha_issues WHERE kind = 'damage' AND status = 'pending'");
-        $rp = $c("SELECT COUNT(*) FROM ha_issues WHERE kind = 'repair' AND status IN ('at_repair', 'partly_returned')");
-        $w30 = $c("SELECT COUNT(*) FROM ha_warranties WHERE expiry_at BETWEEN ? AND ?", [$today, date('Y-m-d', strtotime("$today +30 days"))]);
-        $post($main, "☀️ <b>Good morning — Hostel Assets, " . date('d/m/Y') . "</b>\nWaiting for approval\n• Transfers: $tr\n• Damage: $dm\n"
-            . "At repair: $rp job" . ($rp === 1 ? '' : 's') . (count($over) ? ' (' . count($over) . ' overdue)' : '') . "\nWarranties expiring in 30 days: $w30" . $foot);
+        $iname = fn($id) => h(itemRow((int) $id)['name'] ?? '');
+        $iunit = fn($id) => h(itemRow((int) $id)['unit'] ?? '');
+        $tr = array_map(fn($i) => $hn($i['hostel_id']) . ' → ' . $hn($i['to_hostel_id']) . ' - ' . $iname($i['item_id']) . ' - ' . (int) $i['qty'] . ' ' . $iunit($i['item_id']),
+            q("SELECT * FROM ha_issues WHERE kind = 'transfer' AND status = 'pending' ORDER BY at, id")->fetchAll());
+        $dm = array_map(fn($i) => $hn($i['hostel_id']) . ' - ' . $iname($i['item_id']) . ' - ' . (int) $i['qty'] . ' ' . $iunit($i['item_id']),
+            q("SELECT * FROM ha_issues WHERE kind = 'damage' AND status = 'pending' ORDER BY at, id")->fetchAll());
+        $rp = [];
+        foreach (q("SELECT * FROM ha_issues WHERE kind = 'repair' AND status IN ('at_repair', 'partly_returned') ORDER BY at, id")->fetchAll() as $i) {
+            $out = (int) $i['qty'] - (int) $i['returned_qty'] - (int) $i['scrapped_qty'];
+            if ($out > 0) {
+                $rp[] = ($i['place'] !== '' ? h($i['place']) : $hn($i['hostel_id'])) . ' - ' . $iname($i['item_id']) . ' - ' . $out . ' ' . $iunit($i['item_id']);
+            }
+        }
+        $sec = fn($label, $rows) => "\n• <b>$label: " . count($rows) . "</b>" . ($rows ? "\n" . numList($rows) : '') . "\n";
+        $post($main, "☀️ <b>Good morning — Hostel Assets, " . date('d/m/Y') . "</b>\nWaiting for approval\n"
+            . $sec('Transfers', $tr) . $sec('Damage', $dm) . $sec('Repair', $rp) . $foot);
     }
     return ['sent' => $sent, 'message' => "Sent $sent message" . ($sent === 1 ? '' : 's') . '.'];
 }
