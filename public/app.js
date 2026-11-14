@@ -502,17 +502,19 @@ function drawHist() {
 }
 
 /* ---------- stock in ---------- */
+// Serial No. of a warranty item's stock-in entry (from the warranty row created with it).
+const serialOf = (t) => (S.d.warranties.find((w) => w.txnId === t.id) || {}).warrantyNo || "";
 V.stock = () => {
   const f = fv("stock");
   let rows = S.d.txns.filter((t) => (t.kind === "opening" || t.kind === "in") && M.scopeH.includes(t.hostelId))
     .filter((t) => (!f.h || t.hostelId === +f.h) && (!f.kind || t.kind === f.kind) && (!f.c || (M.I.get(t.itemId) || {}).categoryId === +f.c) && inRange(t.at, f))
-    .filter((t) => match(f.q, iName(t.itemId), t.party, t.notes, hName(t.hostelId)))
+    .filter((t) => match(f.q, iName(t.itemId), t.party, t.notes, hName(t.hostelId), serialOf(t)))
     .sort((a, b) => cmp(b.at, a.at) || b.id - a.id);
   const sum = (k) => rows.filter((t) => !k || t.kind === k).reduce((s, t) => s + t.qty, 0);
   const cols = [
     { h: "Date", t: (t) => t.at, html: (t) => fmtD(t.at), cls: "nw" },
     { h: "Unit", t: (t) => hName(t.hostelId), cls: "nw" },
-    { h: "Item", t: (t) => iName(t.itemId), html: (t) => `<span class="lnk" data-act="ledger" data-h="${t.hostelId}" data-i="${t.itemId}">${esc(iName(t.itemId))}</span>` },
+    { h: "Item", t: (t) => iName(t.itemId) + (serialOf(t) ? ` (Serial No. ${serialOf(t)})` : ""), html: (t) => `<span class="lnk" data-act="ledger" data-h="${t.hostelId}" data-i="${t.itemId}">${esc(iName(t.itemId))}</span>${serialOf(t) ? `<div class="sn">Serial No. ${esc(serialOf(t))}</div>` : ""}` },
     { h: "Type", t: (t) => KIND[t.kind].l, html: (t) => badge(KIND[t.kind]) },
     { h: "Qty", t: (t) => t.qty, num: 1, html: (t) => `<span class="qin">${nf(t.qty)}</span>` },
     { h: "UoM", t: (t) => iUnit(t.itemId), cls: "dim" },
@@ -536,7 +538,7 @@ V.stock = () => {
       { k: "c", l: "Category", opts: catOpts(), all: "All categories" },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
     ])
-    + table("stock", cols, rows, { card: (t) => ({ tone: t.kind === "opening" ? "blue" : "green", title: `<span class="lnk" data-act="ledger" data-h="${t.hostelId}" data-i="${t.itemId}">${esc(iName(t.itemId))}</span>`, qty: `${nf(t.qty)} <small>${esc(iUnit(t.itemId))}</small>`, sub: esc(hName(t.hostelId)), meta: `${fmtD(t.at)} · ${esc(uName(t.createdBy))}`, status: badge(KIND[t.kind]), extra: [["Notes", esc(t.notes || "")]] }), csv: "stock-in", empty: "No stock entered yet." });
+    + table("stock", cols, rows, { card: (t) => ({ tone: t.kind === "opening" ? "blue" : "green", title: `<span class="lnk" data-act="ledger" data-h="${t.hostelId}" data-i="${t.itemId}">${esc(iName(t.itemId))}</span>${serialOf(t) ? `<div class="sn">Serial No. ${esc(serialOf(t))}</div>` : ""}`, qty: `${nf(t.qty)} <small>${esc(iUnit(t.itemId))}</small>`, sub: esc(hName(t.hostelId)), meta: `${fmtD(t.at)} · ${esc(uName(t.createdBy))}`, status: badge(KIND[t.kind]), extra: [["Notes", esc(t.notes || "")]] }), csv: "stock-in", empty: "No stock entered yet." });
 };
 
 /* ---------- issue register ---------- */
