@@ -1224,36 +1224,49 @@ function parseCSV(text) {
 const toIso = (t) => { t = String(t || "").trim(); let m = t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/); if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`; m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? t : t; };
 function bulkForm() {
   closeDlg();
-  const locs = hostelOpts().filter(([id]) => (M.H.get(id) || {}).active).map(([, l]) => l);
-  const items = S.d.items.filter((i) => i.active);
   let rows = null;
   const w = document.createElement("div");
   w.className = "dlg";
   w.innerHTML = `<form novalidate><div class="dh"><div><h2>Opening Stock Bulk Upload</h2><p>Load opening stock for many items at once from a spreadsheet.</p></div><button type="button" class="iconbtn" data-close aria-label="Close">${ic("x")}</button></div>
     <div class="db">
       <div class="fld"><label>1. Download the Template</label><div><button type="button" class="btn" id="bkTpl">${ic("download")}Download Template</button></div></div>
-      <div class="fld"><label for="bkFile">2. Upload the Filled File (.csv)</label><input type="file" id="bkFile" accept=".csv,text/csv"></div>
+      <div class="fld"><label for="bkFile">2. Upload the Filled File</label><input type="file" id="bkFile" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"></div>
       <div id="bkOut" class="fld"></div>
     </div>
     <div class="df"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn pri" id="bkGo" disabled>Import</button></div></form>`;
   document.body.appendChild(w);
   const out = $("#bkOut", w), go = $("#bkGo", w);
-  $("#bkTpl", w).onclick = () => {
-    const ex = items.slice(0, 2).map((it, n) => [locs[0] || "", it.name, n ? 5 : 20, fmtD(today()), n ? "" : "Sharma Furniture", "", "", itemHasWarranty(it.id) ? fmtD(addDays(today(), 365)) : "", "Example row — replace"]);
-    const lines = [BULK_COLS.map(([, h]) => h)].concat(ex).map((r) => r.map(csvCell).join(","));
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" }));
-    a.download = "opening-stock-template.csv";
-    document.body.appendChild(a); a.click(); a.remove();
+  // Excel template from the server: Unit / Warehouse and Item are dropdowns, dates are dd/mm/yyyy.
+  $("#bkTpl", w).onclick = async () => {
+    try {
+      const res = await fetch(API + "?a=stock.template", { credentials: "same-origin", headers: { "X-Req": "1" } });
+      if (!res.ok) throw new Error();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(await res.blob());
+      a.download = "opening-stock-template.xlsx";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    } catch (_) { toast("The template could not be downloaded. Try again.", true); }
   };
   w.addEventListener("click", (e) => { if (e.target.closest("[data-close]")) closeDlg(); });
   $("#bkFile", w).onchange = async (e) => {
     const file = e.target.files[0];
     go.disabled = true; rows = null;
     if (!file) { out.innerHTML = ""; return; }
-    const grid = parseCSV(await file.text());
-    if (grid.length < 2) { out.innerHTML = `<div class="err">${ic("alert")}<span>The file has no rows under the header.</span></div>`; return; }
-    rows = grid.slice(1).map((r) => Object.fromEntries(BULK_COLS.map(([k], n) => [k, /date|warrantyStart|warrantyExpiry/.test(k) ? toIso(r[n]) : String(r[n] ?? "").trim()])));
+    const isX = /\.xlsx$/i.test(file.name);
+    let list;
+    try {
+      if (isX) {
+        // The server reads the Excel file and returns its rows.
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        let bin = ""; for (let k = 0; k < bytes.length; k += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(k, k + 0x8000));
+        list = (await api("stock.parse", { data: btoa(bin) })).rows;
+      } else {
+        list = parseCSV(await file.text()).slice(1).map((r) => Object.fromEntries(BULK_COLS.map(([k], n) => [k, r[n] ?? ""])));
+      }
+    } catch (err) { out.innerHTML = `<div class="err">${ic("alert")}<span>${esc(err.message || "This file could not be read.")}</span></div>`; return; }
+    if (!list.length) { out.innerHTML = `<div class="err">${ic("alert")}<span>The file has no rows under the header.</span></div>`; return; }
+    rows = list.map((r) => Object.fromEntries(BULK_COLS.map(([k]) => [k, /date|warrantyStart|warrantyExpiry/.test(k) ? toIso(r[k]) : String(r[k] ?? "").trim()])));
     out.innerHTML = `<div class="help">Checking ${nf(rows.length)} rows…</div>`;
     try {
       const r = await api("stock.bulk", { rows, check: 1 });

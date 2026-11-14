@@ -33,6 +33,7 @@ if (!is_file($configFile)) {
 require $configFile;
 require __DIR__ . '/install.php';
 require __DIR__ . '/notify.php';
+require __DIR__ . '/xlsx.php';
 date_default_timezone_set(defined('APP_TZ') ? APP_TZ : 'Asia/Kolkata');
 
 session_set_cookie_params([
@@ -102,6 +103,9 @@ function nowMs(): int
 }
 
 const ROLES = ['Admin', 'Organization', 'Foundation', 'Unit'];
+// Columns of the opening stock template: [key, header].
+const BULK_COLS = [['location', 'Unit / Warehouse'], ['item', 'Item'], ['qty', 'Qty'], ['date', 'Date'], ['supplier', 'Supplier'],
+    ['warrantyNo', 'Serial No.'], ['warrantyStart', 'Warranty From'], ['warrantyExpiry', 'Warranty Expiry'], ['notes', 'Notes']];
 const UNIT_TYPES = ['Hostel', 'College'];
 
 function tgChatOk($v): string
@@ -731,6 +735,42 @@ try {
                 fail($err);
             }
             out(['ok' => true]);
+        }
+
+        case 'stock.template': {
+            // Opening stock template (.xlsx) with dropdowns of this login's units / warehouses and the active items.
+            $u = requireUser();
+            [$inH, $hp] = scopeSql($u, 'id');
+            $locs = (seesAll($u) ? db()->query("SELECT name FROM ha_hostels WHERE active = 1 ORDER BY kind = 'unit', name") : q("SELECT name FROM ha_hostels WHERE active = 1 AND $inH ORDER BY kind = 'unit', name", $hp))->fetchAll(PDO::FETCH_COLUMN);
+            $items = db()->query("SELECT name FROM ha_items WHERE active = 1 ORDER BY name")->fetchAll(PDO::FETCH_COLUMN);
+            $bin = xlsxTemplate(array_column(BULK_COLS, 1), [0 => $locs, 1 => $items], [3, 6, 7]);
+            header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            header('Content-Disposition: attachment; filename="opening-stock-template.xlsx"');
+            header('Content-Length: ' . strlen($bin));
+            echo $bin;
+            exit;
+        }
+
+        case 'stock.parse': {
+            // Reads an uploaded .xlsx (base64) into rows for stock.bulk; row 1 is the header.
+            requireUser();
+            $bin = base64_decode((string) (body()['data'] ?? ''), true);
+            if (!$bin || strlen($bin) > 5000000) {
+                fail('Upload the filled template (.xlsx).');
+            }
+            try {
+                $grid = xlsxRows($bin, [3, 6, 7]);
+            } catch (Throwable $e) {
+                fail('This file could not be read. Upload the template saved as .xlsx.');
+            }
+            $rows = [];
+            foreach (array_slice($grid, 1) as $r) {
+                if (implode('', $r) === '') {
+                    continue;
+                }
+                $rows[] = array_combine(array_column(BULK_COLS, 0), array_map(fn($i) => $r[$i] ?? '', array_keys(BULK_COLS)));
+            }
+            out(['rows' => $rows]);
         }
 
         case 'stock.bulk': {
