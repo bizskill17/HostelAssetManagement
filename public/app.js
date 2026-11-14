@@ -323,7 +323,7 @@ function downloadCSV(key) {
 const head = (title, _sub, acts = "") => `<div class="ph"><div><h1>${esc(tc(title))}</h1></div><div class="acts">${acts}</div></div>`;
 const csvBtn = (key) => `<button class="btn dl" data-act="csv" data-key="${key}" title="Download as CSV">${ic("download")}<span class="l">Download</span></button>`;
 // Count cards appear only on the Dashboard.
-const stats = (list, onDashboard) => !onDashboard ? "" : `<div class="stats dash">${list.map((s) => `<div class="stat t-${s.tone || "brand"}${s.go ? " click" : ""}" ${s.go ? `data-go="${s.go}"` : ""}><div class="l">${esc(s.l)}</div><div class="v">${esc(s.v)}</div></div>`).join("")}</div>`;
+const stats = (list, onDashboard) => !onDashboard ? "" : `<div class="stats dash">${list.map((s) => `<div class="stat t-${s.tone || "brand"}${s.go ? " click" : ""}" ${s.go ? `data-go="${s.go}"` : ""}><div class="l">${s.i ? ic(s.i) : ""}${esc(s.l)}</div><div class="v">${esc(s.v)}</div></div>`).join("")}</div>`;
 const scopeText = () => (M.all ? `All ${S.d.foundations.length} foundation${S.d.foundations.length === 1 ? "" : "s"}` : M.role === "Foundation" ? fName(M.myF) : hName(M.myH));
 const canWriteHostel = (h) => inS(h);
 
@@ -355,10 +355,10 @@ V.home = () => {
   const days = [...Array(30)].map((_, k) => addDays(today(), k - 29));
   const inK = new Set(["in", "opening", "transfer_in", "repair_return"]), outK = new Set(["transfer_out", "repair_out", "damaged"]);
   const perDay = (ks) => days.map((d) => txs.filter((t) => t.at === d && ks.has(t.kind)).reduce((a, t) => a + t.qty, 0));
-  const flow = colChart(days, [{ name: "In", color: "#0F8A66", vals: perDay(inK) }, { name: "Out", color: "#7C3AED", vals: perDay(outK) }]);
+  const flow = colChart(days, [{ name: "In", color: "#0F766E", vals: perDay(inK) }, { name: "Out", color: "#B4532A", vals: perDay(outK) }]);
   // 2. Out Register this month by type
   const mIss = S.d.issues.filter((i) => i.at >= monthStart && !["cancelled", "rejected", "void"].includes(i.status) && (inS(i.hostelId) || inS(i.toHostelId)));
-  const typeParts = [["transfer", "Transfer", "#7C3AED"], ["repair", "Repair", "#D97706"], ["damage", "Damage", "#BE123C"]].map(([k, l, c]) => ({ label: l, color: c, value: mIss.filter((i) => i.kind === k).length, go: "issues" }));
+  const typeParts = [["transfer", "Transfer", "#0F766E"], ["repair", "Repair", "#A16207"], ["damage", "Damage", "#B4532A"]].map(([k, l, c]) => ({ label: l, color: c, value: mIss.filter((i) => i.kind === k).length, go: "issues" }));
   // 3. Stock by unit / warehouse, 4. by category
   const byUnit = S.d.hostels.filter((h) => inS(h.id)).map((h) => ({ label: h.name, value: rows.filter((r) => r.hostelId === h.id).reduce((a, r) => a + r.current, 0), act: `data-act="invHostel" data-id="${h.id}"` })).sort((a, b) => b.value - a.value);
   const byCat = S.d.categories.map((c) => ({ label: c.name, value: rows.filter((r) => (M.I.get(r.itemId) || {}).categoryId === c.id).reduce((a, r) => a + r.current, 0) })).filter((x) => x.value > 0).sort((a, b) => b.value - a.value);
@@ -369,18 +369,18 @@ V.home = () => {
 
   return head("Dashboard", `${esc(scopeText())} · ${fmtD(today())}`)
     + stats([
-      { v: nf(M.incoming.length), l: "Transfer Approval", tone: M.incoming.length ? "amber" : "slate", go: "issues?transfer" },
-      { v: nf(M.dmgPending.length), l: "Damage Approval", tone: M.dmgPending.length ? "red" : "slate", go: "issues?damage" },
-      { v: nf(atRep), l: overdue ? `At Repair · ${overdue} overdue` : "At Repair", tone: overdue ? "red" : "amber", go: "issues?repair" },
-      { v: nf(dmgMonth), l: "Damage This Month", tone: "red", go: "damaged" },
-      { v: nf(M.exp30), l: "Warranties expiring in 30 days", tone: M.exp30 ? "red" : "green", go: "warranties" },
+      { v: nf(M.incoming.length), l: "Transfer Approval", tone: "green", i: "move", go: "issues?transfer" },
+      { v: nf(M.dmgPending.length), l: "Damage Approval", tone: "red", i: "alert", go: "issues?damage" },
+      { v: nf(atRep), l: overdue ? `At Repair · ${overdue} overdue` : "At Repair", tone: "amber", i: "wrench", go: "issues?repair" },
+      { v: nf(dmgMonth), l: "Damage This Month", tone: "violet", i: "trash", go: "damaged" },
+      { v: nf(M.exp30), l: "Warranties expiring in 30 days", tone: "cyan", i: "shield", go: "warranties" },
     ], true)
     + `<div class="dgrid">`
     + `<div class="dwide">${card("Stock In and Out", "Last 30 days · quantity", flow)}</div>`
     + card("Out Register this month", "By type", donut(typeParts, "entries"), "issues")
-    + card(M.multi ? "Stock by unit" : "Current stock", "Quantity now", hbars(M.multi ? byUnit : [{ label: hName(M.scopeH[0]), value: total }], "#2F54EB"), "inventory")
-    + card("Stock by category", "Quantity now", hbars(byCat, "#0E7490"), "inventory")
-    + card("Warranties expiring", "Next 6 months", vbars(warMonths, "#C2410C", "warranties"), "warranties")
+    + card(M.multi ? "Stock by unit" : "Current stock", "Quantity now", hbars(M.multi ? byUnit : [{ label: hName(M.scopeH[0]), value: total }], "#0F766E"), "inventory")
+    + card("Stock by category", "Quantity now", hbars(byCat, "#4D7C0F"), "inventory")
+    + card("Warranties expiring", "Next 6 months", vbars(warMonths, "#9F1239", "warranties"), "warranties")
     + `</div>`
     + `<div class="grid2"><div><div class="card"><div class="ch"><h3>Recent movements</h3><a href="#issues" class="sub">Out Register</a></div>${recentList}</div></div>`
     + `<div><div class="card"><div class="ch"><h3>At repair</h3><a href="#issues?repair" class="sub">Track repairs</a></div>${repList}</div></div></div>`;
