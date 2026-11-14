@@ -547,6 +547,7 @@ function issueCols(withActs = true) {
     { h: "No.", t: (i) => i.no, html: (i) => `<span class="mono">${esc(i.no)}</span>`, cls: "nw" },
     { h: "Date", t: (i) => i.at, html: (i) => fmtD(i.at), cls: "nw" },
     { h: "Type", t: (i) => ISSUE_KIND[i.kind].l, html: (i) => badge(ISSUE_KIND[i.kind]) },
+    { h: "Repair type", t: (i) => (i.kind === "repair" ? i.repairType || "External" : ""), html: (i) => (i.kind === "repair" ? `<span class="b ${i.repairType === "Internal" ? "cyan" : "violet"}">${esc(i.repairType || "External")}</span>` : `<span class="dim">—</span>`) },
     { h: "From", t: (i) => hName(i.hostelId), cls: "nw" },
     { h: "Item", t: (i) => iName(i.itemId), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(iName(i.itemId))}</span>` },
     { h: "Qty", t: (i) => i.qty, num: 1, html: (i) => `<b>${nf(i.qty)}</b> <span class="dim">${esc(iUnit(i.itemId))}</span>` },
