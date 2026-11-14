@@ -944,6 +944,8 @@ const MASTERS = {
     ],
   },
 };
+// "measuring unit" → "Measuring Unit" for buttons and form titles.
+const tc = (t) => String(t).replace(/\b\w/g, (c) => c.toUpperCase());
 const ROLES = ["Unit", "Foundation", "Organization", "Admin"];
 const userScope = (r) => (r.role === "Admin" ? "Everything" : r.role === "Organization" ? "All foundations" : r.role === "Foundation" ? fName(r.foundationId) : hName(r.hostelId));
 const initials = (n) => String(n || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
@@ -960,7 +962,7 @@ function masterView(key) {
   if (key === "hostels" || key === "items" || key === "users" || key === "foundations") fdefs.push({ k: "st", l: "Status", opts: [["a", "Active"], ["i", "Inactive"]], all: "Any status" });
   if (key === "users") fdefs.push({ k: "role", l: "Role", opts: ROLES.map((r) => [r, r]), all: "All roles" });
   if (key === "hostels") fdefs.push({ k: "fd", l: "Foundation", opts: S.d.foundations.map((f) => [f.id, f.name]), all: "All foundations" }, { k: "ut", l: "Type", opts: [["Hostel", "Hostel"], ["College", "College"]], all: "All types" });
-  return head(m.title, m.sub, `${csvBtn(key)}<button class="btn pri" data-act="mEdit" data-m="${key}">${ic("plus")}<span class="l">Add ${m.one}</span></button>`)
+  return head(m.title, m.sub, `${csvBtn(key)}<button class="btn pri" data-act="mEdit" data-m="${key}">${ic("plus")}<span class="l">Add ${tc(m.one)}</span></button>`)
     + stats(st) + filterBar(key, fdefs) + table(key, cols, rows, { nocards: 1, csv: key, emptyIcon: m.icon, empty: `No ${m.title.toLowerCase()} yet.` });
 }
 ["foundations", "hostels", "items", "categories", "units", "places", "users"].forEach((k) => (V[k] = () => masterView(k)));
@@ -1390,8 +1392,8 @@ function masterForm(key, id) {
   const values = rec ? Object.fromEntries(m.fields.map((fd) => [fd.k, fd.k === "password" ? "" : rec[fd.k] == null ? "" : typeof rec[fd.k] === "boolean" ? rec[fd.k] : String(rec[fd.k])])) : null;
   const fields = m.fields.map((fd) => (fd.k === "password" && !rec ? { ...fd, req: 1, help: "They sign in with their email and this password." } : fd));
   openForm({
-    title: rec ? `Edit ${m.one}` : `Add ${m.one}`, values, fields, submit: rec ? "Save" : `Add ${m.one}`,
-    onSubmit: async (v) => { await api("master.save", { coll: m.coll || key, id: id || null, data: v }); return rec ? "Saved" : `${m.one[0].toUpperCase() + m.one.slice(1)} added`; },
+    title: rec ? `Edit ${tc(m.one)}` : `Add ${tc(m.one)}`, values, fields, submit: rec ? "Save" : `Add ${tc(m.one)}`,
+    onSubmit: async (v) => { await api("master.save", { coll: m.coll || key, id: id || null, data: v }); return rec ? "Saved" : `${tc(m.one)} added`; },
   });
 }
 
@@ -1442,7 +1444,7 @@ const ACT = {
   mDel: async (el) => {
     const m = MASTERS[el.dataset.m];
     const r = m.rows().find((x) => x.id === +el.dataset.id);
-    if (await confirmBox(`Delete ${m.one}?`, `<b>${esc(r.name)}</b> will be removed.`, "Delete", true)) await run(() => api("master.delete", { coll: m.coll || el.dataset.m, id: r.id }), "Deleted");
+    if (await confirmBox(`Delete ${tc(m.one)}?`, `<b>${esc(r.name)}</b> will be removed.`, "Delete", true)) await run(() => api("master.delete", { coll: m.coll || el.dataset.m, id: r.id }), "Deleted");
   },
   testNotify: async () => {
     const out = $("#testOut");
