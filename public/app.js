@@ -586,6 +586,7 @@ function issueActs(i) {
     else if (canWriteHostel(i.hostelId)) b.push(ab("cancel", i.id, "x", "Cancel", "slate"));
   }
   if (i.kind === "repair" && outstanding(i) > 0 && (i.status === "at_repair" || i.status === "partly_returned") && canWriteHostel(i.hostelId)) b.push(ab("return", i.id, "undo", "Record return", "green"));
+  if (M.admin && !i.serialNo && itemHasWarranty(i.itemId)) b.push(ab("setsn", i.id, "tag", "Set Serial No.", "slate"));
   if (M.admin) b.push(isReceived(i)
     ? `<button type="button" class="ab red" disabled title="Received transfers can't be deleted" aria-label="Delete (not allowed)">${ic("trash")}</button>`
     : ab("delissue", i.id, "trash", "Delete", "red"));
@@ -1306,6 +1307,23 @@ function issueForm(kind = "transfer") {
   });
 }
 
+/* ---------- set Serial No. on an older entry (Admin) ---------- */
+function serialForm(id) {
+  const i = S.d.issues.find((x) => x.id === id);
+  if (!i) return;
+  // Pieces of this item at the unit / warehouse it left from first, then anywhere else; not in another open entry or written off.
+  const busy = new Set(S.d.issues.filter((x) => x.id !== i.id && x.itemId === i.itemId && x.serialNo && (x.status === "pending" || (x.kind === "repair" && (x.status === "at_repair" || x.status === "partly_returned")) || (x.kind === "damage" && x.status === "done"))).map((x) => x.serialNo));
+  const ws = S.d.warranties.filter((w) => w.itemId === i.itemId && w.warrantyNo && !busy.has(w.warrantyNo)).sort((a, b) => (b.hostelId === i.hostelId) - (a.hostelId === i.hostelId) || cmp(a.warrantyNo, b.warrantyNo));
+  const opts = [...new Map(ws.map((w) => [w.warrantyNo, `${w.warrantyNo} · ${w.hostelId ? hName(w.hostelId) : "All units"}`])).entries()];
+  if (!opts.length) return toast(`No Serial No. of ${iName(i.itemId)} is free to choose.`, true);
+  openForm({
+    title: "Set Serial No.", sub: `${esc(i.no)} · ${esc(iName(i.itemId))} · ${esc(hName(i.hostelId))}`,
+    fields: [{ k: "serialNo", l: "Serial No.", type: "select", req: 1, blank: "— Choose Serial No. —", opts: () => opts }],
+    submit: "Save",
+    onSubmit: async (v) => { await api("issue.serial", { id, serialNo: v.serialNo }); return `${i.no}: Serial No. ${v.serialNo} saved`; },
+  });
+}
+
 /* ---------- transfer receipt form ---------- */
 function receiveForm(id) {
   const i = S.d.issues.find((x) => x.id === id);
@@ -1398,6 +1416,7 @@ const ACT = {
   issue: (el) => issueForm(el.dataset.kind || "transfer"),
   stockin: () => stockForm(),
   bulkup: () => bulkForm(),
+  setsn: (el) => serialForm(+el.dataset.id),
   csv: (el) => downloadCSV(el.dataset.key),
   ftoggle: (el) => { S.fopen[el.dataset.key] = !S.fopen[el.dataset.key]; render(); },
   fchip: (el) => { fv(el.dataset.key)[el.dataset.k] = ""; S.page[el.dataset.key] = 0; render(); },

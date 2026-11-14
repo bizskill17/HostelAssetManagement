@@ -287,9 +287,9 @@ function stockAdd(array $u, array $b, bool $checkOnly = false, bool $notify = tr
     return '';
 }
 /** True when this Serial No. is in a transfer, repair or damage entry that is still open, or was written off. */
-function serialBusy(int $iid, string $serial): bool
+function serialBusy(int $iid, string $serial, int $exceptIssue = 0): bool
 {
-    return (bool) q("SELECT 1 FROM ha_issues WHERE item_id = ? AND serial_no = ? AND (status = 'pending' OR (kind = 'repair' AND status IN ('at_repair', 'partly_returned')) OR (kind = 'damage' AND status = 'done'))", [$iid, $serial])->fetchColumn();
+    return (bool) q("SELECT 1 FROM ha_issues WHERE id <> $exceptIssue AND item_id = ? AND serial_no = ? AND (status = 'pending' OR (kind = 'repair' AND status IN ('at_repair', 'partly_returned')) OR (kind = 'damage' AND status = 'done'))", [$iid, $serial])->fetchColumn();
 }
 /** True when the item's category is marked "Warranty applicable". */
 function itemWarranty(int $iid): bool
@@ -1033,6 +1033,32 @@ try {
             q("DELETE FROM ha_txns WHERE issue_id=?", [$i['id']]);
             q("DELETE FROM ha_issues WHERE id=?", [$i['id']]);
             db()->commit();
+            out(['ok' => true]);
+        }
+
+        case 'issue.serial': {
+            // Admin fills in the Serial No. of a warranty piece on an entry made before pieces were chosen by Serial No.
+            $u = requireAdmin();
+            $b = body();
+            $i = issueRow(idOrNull($b['id'] ?? null) ?? 0);
+            $serial = str($b['serialNo'] ?? '', 80);
+            if (($i['serial_no'] ?? '') !== '') {
+                fail('This entry already has a Serial No.');
+            }
+            if (!itemWarranty((int) $i['item_id'])) {
+                fail('This item has no warranty, so it has no Serial No.');
+            }
+            if ($serial === '' || !q("SELECT 1 FROM ha_warranties WHERE item_id = ? AND warranty_no = ?", [(int) $i['item_id'], $serial])->fetchColumn()) {
+                fail('Choose a Serial No. of this item.');
+            }
+            if (serialBusy((int) $i['item_id'], $serial, (int) $i['id'])) {
+                fail("Serial No. $serial is already in another open entry, or was written off.");
+            }
+            q("UPDATE ha_issues SET serial_no = ? WHERE id = ?", [$serial, $i['id']]);
+            // A received transfer: the piece (and its warranty) is now at the receiving end.
+            if ($i['kind'] === 'transfer' && in_array($i['status'], ['received', 'short'], true) && (int) $i['received_qty'] > 0) {
+                q("UPDATE ha_warranties SET hostel_id = ? WHERE item_id = ? AND warranty_no = ?", [(int) $i['to_hostel_id'], (int) $i['item_id'], $serial]);
+            }
             out(['ok' => true]);
         }
 
