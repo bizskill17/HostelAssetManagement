@@ -859,8 +859,8 @@ const MASTERS = {
       { h: "Telegram group", t: (r) => r.tgChat || "", html: (r) => (r.tgChat ? `<span class="b green">Connected</span>` : `<span class="dim">—</span>`) },
       { h: "Status", t: (r) => (r.active ? "Active" : "Inactive"), html: (r) => (r.active ? `<span class="b green">Active</span>` : `<span class="b">Inactive</span>`) },
     ],
-    fields: [{ k: "name", l: "Foundation name", req: 1, help: "Its Central Warehouse is created and named automatically." },
-      { k: "tgChat", l: "Telegram group ID", ph: "-1001234567890", help: () => "This group gets the messages of this Foundation's warehouse and all its units. Leave blank to use only the main group." },
+    fields: [{ k: "name", l: "Foundation name", req: 1 },
+      { k: "tgChat", l: "Telegram group ID", ph: "-1001234567890" },
       { k: "active", l: "Active", type: "check", val: true }],
   },
   hostels: {
