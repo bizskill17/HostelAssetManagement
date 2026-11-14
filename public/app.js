@@ -1490,9 +1490,7 @@ const NAV = [
   { g: "Overview" }, { v: "home", l: "Dashboard", i: "home" }, { v: "inventory", l: "Inventory", i: "box" },
   // All Damaged / All Transfers / All Repairs stay reachable by link but are not in the menu.
   { g: "Operations" }, { v: "stock", l: "In Register", i: "in" }, { v: "issues", l: "Out Register", i: "send" },
-  { g: "Approvals Pending" }, { v: "transfer", l: "Transfer", i: "move", n: () => M.incoming.length, hot: 1 },
-  { v: "damage", l: "Damage", i: "alert", n: () => M.dmgPending.length, hot: 1 },
-  { v: "repairs", l: "Repair", i: "wrench", n: () => M.openRepairs.length },
+  // Transfer / Damage / Repair approval pages are reached from the Dashboard tiles and the phone's Approvals tab.
   { g: "Records" }, { v: "warranties", l: "Warranties", i: "shield", n: () => M.exp30, hot: 1 },
   { g: "Masters", admin: 1 }, { v: "foundations", l: "Foundations", i: "building", admin: 1 }, { v: "hostels", l: "Units", i: "home", admin: 1 }, { v: "items", l: "Items", i: "tag", admin: 1 }, { v: "categories", l: "Categories", i: "folder", admin: 1 }, { v: "units", l: "Measuring units", i: "box", admin: 1 },
   { v: "places", l: "Damage destinations", i: "trash", admin: 1 }, { v: "users", l: "Users", i: "users", admin: 1 }, { v: "settings", l: "Settings", i: "settings", admin: 1 },
