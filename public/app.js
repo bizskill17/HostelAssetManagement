@@ -976,10 +976,10 @@ V.settings = () => {
   return head("Settings")
     + `<div class="card" style="max-width:760px"><div class="ch"><h3>Telegram notifications</h3><span class="sub">${hostelGroups ? `Main group + ${hostelGroups} more group${hostelGroups > 1 ? "s" : ""}` : "Main group"}</span></div>
     <form id="setForm" class="db" style="padding:18px 20px">
-      <div class="fld"><label>Organization name</label><input name="orgName" value="${esc(s.orgName || "")}" placeholder="e.g. Ajmal Group"></div>
+      <div class="fld"><label>Organization name</label><input name="orgName" value="${esc(s.orgName || "")}"></div>
       <div class="fld"><label class="chk"><input type="checkbox" name="telegramOn" ${s.telegramOn ? "checked" : ""}> Send Telegram notifications</label></div>
-      <div class="fld half"><label>Bot token</label><input name="telegramToken" type="password" autocomplete="new-password" placeholder="${s.telegramTokenSet ? "Saved — leave blank to keep" : "123456:ABC…"}"></div>
-      <div class="fld half"><label>Main group chat ID</label><input name="telegramChat" value="${esc(s.telegramChat)}" placeholder="-1001234567890"></div>
+      <div class="fld half"><label>Bot token</label><input name="telegramToken" type="password" autocomplete="new-password"></div>
+      <div class="fld half"><label>Main group chat ID</label><input name="telegramChat" value="${esc(s.telegramChat)}"></div>
       <div class="fld"><label>App address (added as a link in messages)</label><input name="appUrl" value="${esc(s.appUrl || location.origin + location.pathname.replace(/index\.html$/, ""))}"></div>
       <div class="fld" style="border-top:1px solid var(--line2);padding-top:14px;margin-top:4px"><label>Messages to send</label>
         <div class="evgrid">${ev.map(([k, l]) => `<label class="chk"><input type="checkbox" name="ev_${k}" ${off.has(k) ? "" : "checked"}> ${esc(l)}</label>`).join("")}</div></div>
@@ -1022,10 +1022,10 @@ function openForm(o) {
         ctl = `<select id="f_${fd.k}" name="${fd.k}">${fd.blank !== undefined ? `<option value="">${esc(fd.blank)}</option>` : ""}${fd.opts(vals).map(([ov, ol]) => `<option value="${esc(ov)}"${String(ov) === String(v) ? " selected" : ""}>${esc(ol)}</option>`).join("")}</select>`;
         if (fd.add && M.admin) ctl = `<div class="inrow">${ctl}<button type="button" class="btn addbtn" data-addfor="${fd.k}" title="${esc(fd.add.title)}" aria-label="${esc(fd.add.title)}">${ic("plus")}</button></div>`;
       }
-      else if (fd.type === "textarea") ctl = `<textarea id="f_${fd.k}" name="${fd.k}" placeholder="${esc((typeof fd.ph === "function" ? fd.ph(vals) : fd.ph) || "")}">${esc(v)}</textarea>`;
+      else if (fd.type === "textarea") ctl = `<textarea id="f_${fd.k}" name="${fd.k}">${esc(v)}</textarea>`;
       else if (fd.type === "check") return `<div class="fld"><label class="chk"><input type="checkbox" name="${fd.k}" ${v ? "checked" : ""}> ${esc(fd.l)}</label>${helpH}</div>`;
       else if (fd.type === "seg") ctl = `<input type="hidden" name="${fd.k}" value="${esc(v)}"><div class="seg">${fd.opts(vals).map(([ov, ol, icn]) => `<button type="button" data-seg="${fd.k}" data-v="${esc(ov)}" class="${String(ov) === String(v) ? "on" : ""}">${icn ? ic(icn) : ""}${esc(ol)}</button>`).join("")}</div>`;
-      else ctl = `<input id="f_${fd.k}" name="${fd.k}" type="${fd.type || "text"}" value="${esc(v)}" placeholder="${esc((typeof fd.ph === "function" ? fd.ph(vals) : fd.ph) || "")}" ${fd.type === "number" ? 'min="0" step="1" inputmode="numeric"' : ""} ${(typeof fd.ro === "function" ? fd.ro(vals) : fd.ro) ? "readonly tabindex=\"-1\" style=\"background:var(--line2);font-weight:700\"" : ""} ${fd.list ? `list="l_${fd.k}"` : ""} autocomplete="${fd.type === "password" ? "new-password" : "off"}">${fd.list ? `<datalist id="l_${fd.k}">${fd.list.map((x) => `<option value="${esc(x)}">`).join("")}</datalist>` : ""}`;
+      else ctl = `<input id="f_${fd.k}" name="${fd.k}" type="${fd.type || "text"}" value="${esc(v)}" ${fd.type === "number" ? 'min="0" step="1" inputmode="numeric"' : ""} ${(typeof fd.ro === "function" ? fd.ro(vals) : fd.ro) ? "readonly tabindex=\"-1\" style=\"background:var(--line2);font-weight:700\"" : ""} ${fd.list ? `list="l_${fd.k}"` : ""} autocomplete="${fd.type === "password" ? "new-password" : "off"}">${fd.list ? `<datalist id="l_${fd.k}">${fd.list.map((x) => `<option value="${esc(x)}">`).join("")}</datalist>` : ""}`;
       return `<div class="fld${fd.half ? " half" : ""}${bad[fd.k] ? " bad" : ""}" data-fk="${fd.k}">${lab}${ctl}${bad[fd.k] ? `<div class="ferr">${esc(bad[fd.k])}</div>` : ""}${helpH}</div>`;
     }).join("") + `<div class="err" role="alert"></div>`;
     refresh();
@@ -1138,7 +1138,7 @@ function promptBox(o) {
   const w = document.createElement("div");
   w.className = "dlg mini";
   w.innerHTML = `<form novalidate class="box"><div class="dh"><div><h2>${esc(o.title)}</h2></div><button type="button" class="iconbtn" data-x aria-label="Close">${ic("x")}</button></div>
-    <div class="db"><div class="fld"><label>${esc(o.label)} <span class="req">*</span></label><input name="v" placeholder="${esc(o.ph || "")}" autocomplete="off"></div><div class="err"></div></div>
+    <div class="db"><div class="fld"><label>${esc(o.label)} <span class="req">*</span></label><input name="v" autocomplete="off"></div><div class="err"></div></div>
     <div class="df"><button type="button" class="btn" data-x>Cancel</button><button type="submit" class="btn pri">Add</button></div></form>`;
   document.body.appendChild(w);
   const f = $("form", w), err = $(".err", f);
@@ -1756,8 +1756,8 @@ function showAuth(mode) {
   const setup = mode === "setup";
   a.innerHTML = `<form novalidate><div class="band">${setup ? "Create the admin account" : "Hostel Asset Management"}</div><div class="body">
     ${setup ? `<p class="lead">First-time setup. This account manages foundations, units, items and users.</p><div class="fld"><label>Your name</label><div class="iw"><input name="name" autocomplete="name"></div></div>` : ""}
-    <div class="fld"><label>Email</label><div class="iw">${ic("mail")}<input name="email" type="email" autocomplete="username" placeholder="name@hostel.com"></div></div>
-    <div class="fld"><label>Password</label><div class="iw">${ic("lock")}<input name="password" type="password" autocomplete="${setup ? "new-password" : "current-password"}" placeholder="${setup ? "At least 8 characters" : "••••••••"}"><button type="button" class="eye" aria-label="Show password">${ic("eye")}</button></div></div>
+    <div class="fld"><label>Email</label><div class="iw">${ic("mail")}<input name="email" type="email" autocomplete="username"></div></div>
+    <div class="fld"><label>Password</label><div class="iw">${ic("lock")}<input name="password" type="password" autocomplete="${setup ? "new-password" : "current-password"}"><button type="button" class="eye" aria-label="Show password">${ic("eye")}</button></div></div>
     <div class="err"></div><button class="btn pri" type="submit">${setup ? "Create account" : "Sign in"}</button></div></form>`;
   a.hidden = false;
   const f = $("form", a);
