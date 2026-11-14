@@ -3,8 +3,19 @@ DirectoryIndex index.html
 Options -Indexes
 
 # Always check for a newer app version, so deploys show up without a hard refresh.
+# index.html is always checked; it links app.js?v=<commit>, so each app.js version can be kept for a year
+# (a deploy changes the link, which loads the new file). Training videos and pictures are kept for a week.
 <IfModule mod_headers.c>
-  <FilesMatch "\.(html|js)$">
+  <FilesMatch "\.html$">
     Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+  <FilesMatch "\.js$">
+    Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+  <If "%{QUERY_STRING} =~ /^v=[0-9a-f]+$/">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </If>
+  <FilesMatch "\.(mp4|jpg|png|webp)$">
+    Header set Cache-Control "public, max-age=604800"
   </FilesMatch>
 </IfModule>
