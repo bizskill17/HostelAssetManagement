@@ -1300,7 +1300,18 @@ function issueForm(kind = "transfer") {
       { k: "dplace", l: "Sent to after damage", type: "select", blank: "— Choose —", req: 1, show: (v) => v.kind === "damage", opts: () => S.d.damagePlaces.map((p) => [p.name, p.name]) },
       { k: "notes", l: "Notes", type: "textarea", ph: "Reason, condition, bill…" },
     ],
-    onChange: (v, k) => { if (k === "hostelId") { v.itemId = ""; v.toHostelId = ""; v.serialNo = ""; } if (k === "itemId") { v.serialNo = ""; if (itemHasWarranty(+v.itemId)) v.qty = "1"; } },
+    onChange: (v, k) => {
+      if (k === "hostelId") { v.itemId = ""; v.toHostelId = ""; v.serialNo = ""; }
+      if (k === "itemId") {
+        v.serialNo = "";
+        if (itemHasWarranty(+v.itemId)) {
+          v.qty = "1";
+          // Only one piece here: pick it straight away.
+          const free = freeSerials(+v.hostelId, +v.itemId);
+          if (free.length === 1) v.serialNo = free[0];
+        }
+      }
+    },
     submit: "Issue",
     onSubmit: async (v) => {
       const r = await api("issue.create", { kind: v.kind, hostelId: +v.hostelId, itemId: +v.itemId, qty: +v.qty, at: v.at, toHostelId: v.toHostelId ? +v.toHostelId : null, place: v.kind === "damage" ? v.dplace : v.place, serialNo: itemHasWarranty(+v.itemId) && freeSerials(+v.hostelId, +v.itemId).length ? v.serialNo : "", repairType: v.repairType, expectedAt: v.expectedAt, notes: v.notes });
