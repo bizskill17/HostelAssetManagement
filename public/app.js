@@ -974,14 +974,14 @@ V.settings = () => {
   return head("Settings")
     + `<div class="card" style="max-width:760px"><div class="ch"><h3>Telegram notifications</h3><span class="sub">${hostelGroups ? `Main group + ${hostelGroups} more group${hostelGroups > 1 ? "s" : ""}` : "Main group"}</span></div>
     <form id="setForm" class="db" style="padding:18px 20px">
-      <div class="fld"><label>Organization name</label><input name="orgName" value="${esc(s.orgName || "")}" placeholder="e.g. Ajmal Group"><div class="help">Shown at the top of the menu. Foundations sit under it.</div></div>
+      <div class="fld"><label>Organization name</label><input name="orgName" value="${esc(s.orgName || "")}" placeholder="e.g. Ajmal Group"></div>
       <div class="fld"><label class="chk"><input type="checkbox" name="telegramOn" ${s.telegramOn ? "checked" : ""}> Send Telegram notifications</label></div>
       <div class="fld half"><label>Bot token</label><input name="telegramToken" type="password" autocomplete="new-password" placeholder="${s.telegramTokenSet ? "Saved — leave blank to keep" : "123456:ABC…"}"></div>
-      <div class="fld half"><label>Main group chat ID</label><input name="telegramChat" value="${esc(s.telegramChat)}" placeholder="-1001234567890"><div class="help">Gets every message from all foundations and units.</div></div>
+      <div class="fld half"><label>Main group chat ID</label><input name="telegramChat" value="${esc(s.telegramChat)}" placeholder="-1001234567890"></div>
       <div class="fld"><label>App address (added as a link in messages)</label><input name="appUrl" value="${esc(s.appUrl || location.origin + location.pathname.replace(/index\.html$/, ""))}"></div>
       <div class="fld" style="border-top:1px solid var(--line2);padding-top:14px;margin-top:4px"><label>Messages to send</label>
         <div class="evgrid">${ev.map(([k, l]) => `<label class="chk"><input type="checkbox" name="ev_${k}" ${off.has(k) ? "" : "checked"}> ${esc(l)}</label>`).join("")}</div></div>
-      <div class="fld half"><label>Daily messages time</label><input name="dailyTime" type="time" value="${esc(s.dailyTime || "09:00")}"><div class="help">Repairs overdue, warranties expiring and the morning summary go out once a day after this time.${s.lastDaily ? ` Last sent ${fmtD(s.lastDaily)}.` : ""}</div></div>
+      <div class="fld half"><label>Daily messages time</label><input name="dailyTime" type="time" value="${esc(s.dailyTime || "09:00")}"></div>
       <div class="err" id="setErr"></div>
       <div class="fld" style="flex-direction:row;gap:8px;flex-wrap:wrap"><button class="btn pri" type="submit">Save settings</button><button class="btn" type="button" data-act="testNotify">${ic("bell")}Send a test</button><button class="btn" type="button" data-act="dailyNow">${ic("clock")}Send daily messages now</button>${s.telegramTokenSet ? `<button class="btn bad" type="button" data-act="clearToken">Remove bot token</button>` : ""}</div>
       <div id="testOut" class="fld"></div>
@@ -1050,7 +1050,9 @@ function openForm(o) {
     for (const fd of o.fields) {
       const h = body.querySelector(`[data-help="${fd.k}"]`);
       if (h) {
-        const help = typeof fd.help === "function" ? fd.help(vals) : fd.help;
+        // Only live feedback is shown (available qty, warnings); plain hints are not.
+        const raw = typeof fd.help === "function" ? fd.help(vals) : fd.help;
+        const help = raw && typeof raw === "object" && (raw.c === "warn" || raw.c === "good") ? raw : "";
         h.className = "help " + (help && typeof help === "object" ? help.c || "" : "");
         h.innerHTML = help ? (typeof help === "object" ? help.t : esc(help)) : "";
         h.hidden = !help;
