@@ -162,12 +162,12 @@ function pendingOut(int $hid, int $iid, int $exceptIssue = 0): int
     return (int) q("SELECT COALESCE(SUM(qty), 0) FROM ha_issues WHERE kind IN ('transfer', 'damage') AND status = 'pending' AND hostel_id = ? AND item_id = ? AND id <> ?", [$hid, $iid, $exceptIssue])->fetchColumn();
 }
 /**
- * Records damage. An Admin's entry is approved at once (stock goes down); a Warden's waits for an
- * Admin's approval (stock is only set aside). The confirmed quantity is kept in received_qty.
+ * Records damage. Every entry, an Admin's too, waits in Approvals → Damage (stock is only set aside)
+ * until an Admin approves it. The confirmed quantity is kept in received_qty.
  */
 function recordDamage(array $u, int $hid, int $iid, int $qty, string $place, string $at, string $notes): array
 {
-    $approved = isAdmin($u);
+    $approved = false;
     q("INSERT INTO ha_issues (kind, status, hostel_id, item_id, qty, place, at, notes, received_qty, created_by, created_at, decided_by, decided_at)
        VALUES ('damage', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [
         $approved ? 'done' : 'pending', $hid, $iid, $qty, $place, $at, $notes, $approved ? $qty : null, $u['id'], nowMs(),
@@ -808,8 +808,8 @@ try {
             }
             $dmg = null;
             if ($scrap > 0) {
-                // They come back on the books from repair, then are written off as damage, which an Admin
-                // approves (approved at once when an Admin records it), so every column still adds up.
+                // They come back on the books from repair, then are written off as damage, which waits for an
+                // Admin's approval like any damage report, so every column still adds up.
                 addTxn($base + ['kind' => 'repair_return', 'dir' => 1, 'qty' => $scrap, 'party' => $i['place'], 'notes' => 'Not repairable' . ($notes ? " — $notes" : '')], $u);
                 $dmg = recordDamage($u, (int) $i['hostel_id'], (int) $i['item_id'], $scrap, str($b['place'] ?? '', 160), $at,
                     'Not repairable after repair ' . issueNo($i) . ($notes ? " — $notes" : ''));

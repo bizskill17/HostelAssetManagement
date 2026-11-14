@@ -1158,7 +1158,7 @@ function issueForm(kind = "transfer") {
     submit: "Issue",
     onSubmit: async (v) => {
       const r = await api("issue.create", { kind: v.kind, hostelId: +v.hostelId, itemId: +v.itemId, qty: +v.qty, at: v.at, toHostelId: v.toHostelId ? +v.toHostelId : null, place: v.kind === "damage" ? v.dplace : v.place, expectedAt: v.expectedAt, notes: v.notes });
-      return v.kind === "transfer" ? `${r.issue.no} sent to ${hName(+v.toHostelId)} for approval` : v.kind === "repair" ? `${r.issue.no}: sent for repair` : r.issue.status === "pending" ? `${r.issue.no}: sent to Admin for approval` : `${r.issue.no}: marked damaged`;
+      return v.kind === "transfer" ? `${r.issue.no} sent to ${hName(+v.toHostelId)} for approval` : v.kind === "repair" ? `${r.issue.no}: sent for repair` : `${r.issue.no}: sent for approval (Approvals → Damage)`;
     },
   });
 }
