@@ -354,8 +354,15 @@ V.home = () => {
   // 1. In vs Out, last 30 days (quantity per day)
   const days = [...Array(30)].map((_, k) => addDays(today(), k - 29));
   const inK = new Set(["in", "opening", "transfer_in", "repair_return"]), outK = new Set(["transfer_out", "repair_out", "damaged"]);
-  const perDay = (ks) => days.map((d) => txs.filter((t) => t.at === d && ks.has(t.kind)).reduce((a, t) => a + t.qty, 0));
-  const flow = colChart(days, [{ name: "In", color: "#0F766E", vals: perDay(inK) }, { name: "Out", color: "#B4532A", vals: perDay(outK) }]);
+  // In and Out per unit over the last 30 days (grouped bars), and per unit per week (heatmap, last 8 weeks).
+  const qtyOf = (hid, ks, from, to) => txs.reduce((a, t) => (t.hostelId === hid && ks.has(t.kind) && t.at >= from && t.at <= to ? a + t.qty : a), 0);
+  const units = S.d.hostels.filter((h) => inS(h.id));
+  const perUnit = units.map((h) => ({ id: h.id, label: h.name, in: qtyOf(h.id, inK, days[0], today()), out: qtyOf(h.id, outK, days[0], today()) }))
+    .filter((u) => u.in || u.out || !M.multi).sort((a, b) => b.in + b.out - (a.in + a.out));
+  const flow = unitBars(perUnit);
+  const weeks = [...Array(8)].map((_, k) => { const end = addDays(today(), -7 * (7 - k)); return { from: addDays(end, -6), to: end }; });
+  const hmKind = S.hmKind === "out" ? "out" : "in";
+  const heat = heatmap(units.map((h) => ({ id: h.id, label: h.name, vals: weeks.map((w) => qtyOf(h.id, hmKind === "in" ? inK : outK, w.from, w.to)) })), weeks, hmKind);
   // 2. Out Register this month by type
   const mIss = S.d.issues.filter((i) => i.at >= monthStart && !["cancelled", "rejected", "void"].includes(i.status) && (inS(i.hostelId) || inS(i.toHostelId)));
   const typeParts = [["transfer", "Transfer", "#0F766E"], ["repair", "Repair", "#A16207"], ["damage", "Damage", "#B4532A"]].map(([k, l, c]) => ({ label: l, color: c, value: mIss.filter((i) => i.kind === k).length, go: "issues" }));
@@ -376,8 +383,9 @@ V.home = () => {
       { v: nf(M.exp30), l: "Warranties expiring in 30 days", tone: "cyan", i: "shield", go: "warranties" },
     ], true)
     + `<div class="dgrid">`
-    + `<div class="dwide">${card("Stock In and Out", "Last 30 days · quantity", flow)}</div>`
+    + `<div class="dwide">${card(M.multi ? "Stock In and Out by Unit" : "Stock In and Out", "Last 30 days · quantity", flow)}</div>`
     + card("Out Register this month", "By type", donut(typeParts, "entries"), "issues")
+    + `<div class="dfull"><div class="card dchart"><div class="ch"><h3>Weekly Stock ${hmKind === "in" ? "In" : "Out"} by Unit</h3><div class="hmtabs"><button type="button" class="${hmKind === "in" ? "on" : ""}" data-act="hmkind" data-v="in">Stock In</button><button type="button" class="${hmKind === "out" ? "on out" : ""}" data-act="hmkind" data-v="out">Stock Out</button></div></div><div class="cb">${heat}</div></div></div>`
     + card(M.multi ? "Stock by unit" : "Current stock", "Quantity now", hbars(M.multi ? byUnit : [{ label: hName(M.scopeH[0]), value: total }], "#0F766E"), "inventory")
     + card("Stock by category", "Quantity now", hbars(byCat, "#4D7C0F"), "inventory")
     + card("Warranties expiring", "Next 6 months", vbars(warMonths, "#9F1239", "warranties"), "warranties")
@@ -387,25 +395,39 @@ V.home = () => {
 };
 
 /* ---------- small SVG / HTML charts for the Dashboard ---------- */
-// Grouped columns over days (one axis, quantity), with legend and hover tooltips.
-function colChart(days, series) {
-  // Drawn at phone width on phones, so the labels stay readable.
-  const narrow = innerWidth < 700;
-  const W = narrow ? 340 : 640, H = narrow ? 190 : 220, L = 30, B = 24, T = 10, R = 6;
-  const max = Math.max(1, ...series.flatMap((s) => s.vals));
+// Grouped bars: Stock In and Stock Out side by side for each unit (biggest first; the rest go into "Other").
+function unitBars(list) {
+  if (!list.some((u) => u.in || u.out)) return `<div class="empty">${ic("inbox")}<div>No stock in or out in the last 30 days.</div></div>`;
+  const narrow = innerWidth < 700, maxN = narrow ? 4 : 7;
+  if (list.length > maxN + 1) { const rest = list.slice(maxN); list = list.slice(0, maxN).concat([{ label: `Other ${rest.length}`, in: rest.reduce((a, u) => a + u.in, 0), out: rest.reduce((a, u) => a + u.out, 0) }]); }
+  const W = narrow ? 340 : 640, H = narrow ? 210 : 230, L = 34, B = 30, T = 18, Rr = 4;
+  const max = Math.max(1, ...list.flatMap((u) => [u.in, u.out]));
   const step = Math.pow(10, Math.floor(Math.log10(max))) * (max / Math.pow(10, Math.floor(Math.log10(max))) > 5 ? 2 : 1);
   const top = Math.ceil(max / step) * step;
   const y = (v) => T + (H - T - B) * (1 - v / top);
-  const gw = (W - L - R) / days.length, bw = Math.max(2, (gw - 4) / series.length - 1);
-  const ticks = [0, top / 2, top];
-  const grid = ticks.map((v) => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="cg"/><text x="${L - 6}" y="${y(v) + 4}" class="cl" text-anchor="end">${nf(Math.round(v))}</text>`).join("");
-  const bars = days.map((d, k) => series.map((s, n) => { const v = s.vals[k]; if (!v) return ""; const x = L + k * gw + 2 + n * (bw + 1), yy = y(v), h = H - B - yy;
-    return `<path d="M${x},${H - B}v${-(h - Math.min(3, h / 2))}q0,-${Math.min(3, h / 2)} ${Math.min(3, bw / 2)},-${Math.min(3, h / 2)}h${bw - 2 * Math.min(3, bw / 2)}q${Math.min(3, bw / 2)},0 ${Math.min(3, bw / 2)},${Math.min(3, h / 2)}v${h - Math.min(3, h / 2)}z" fill="${s.color}"><title>${fmtD(d)} · ${s.name}: ${nf(v)}</title></path>`; }).join("")).join("");
-  const hits = days.map((d, k) => `<rect x="${L + k * gw}" y="${T}" width="${gw}" height="${H - T - B}" fill="transparent"><title>${fmtD(d)}\n${series.map((s) => `${s.name}: ${nf(s.vals[k])}`).join("\n")}</title></rect>`).join("");
-  // Date labels counted back from today, so the last one is today; it is right-aligned so it is not cut off.
-  const xl = days.map((d, k) => ((days.length - 1 - k) % (narrow ? 7 : 5) === 0 ? `<text x="${k === days.length - 1 ? W - R : L + k * gw + gw / 2}" y="${H - 8}" class="cl" text-anchor="${k === days.length - 1 ? "end" : "middle"}">${d.slice(8, 10)}/${d.slice(5, 7)}</text>` : "")).join("");
-  const totals = series.map((s) => `<span class="lg"><i style="background:${s.color}"></i>${esc(s.name)} <b>${nf(s.vals.reduce((a, b) => a + b, 0))}</b></span>`).join("");
-  return `<div class="legend">${totals}</div><svg class="svgc" viewBox="0 0 ${W} ${H}" role="img" aria-label="Stock in and out per day, last 30 days">${grid}<line x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}" class="ca"/>${bars}${hits}${xl}</svg>`;
+  const gw = (W - L - Rr) / list.length, bw = Math.min(30, (gw - 14) / 2);
+  const grid = [0, top / 2, top].map((v) => `<line x1="${L}" x2="${W - Rr}" y1="${y(v)}" y2="${y(v)}" class="cg"/><text x="${L - 6}" y="${y(v) + 4}" class="cl" text-anchor="end">${nf(Math.round(v))}</text>`).join("");
+  const maxCh = Math.max(4, Math.floor((gw - 6) / 6.8));
+  const short = (t) => (t.length > maxCh ? t.slice(0, maxCh - 1) + "…" : t);
+  const bar = (x, v, c, name, u) => { if (!v) return ""; const yy = y(v), h = H - B - yy, r = Math.min(4, h / 2, bw / 2);
+    return `<path d="M${x},${H - B}v${-(h - r)}q0,-${r} ${r},-${r}h${bw - 2 * r}q${r},0 ${r},${r}v${h - r}z" fill="${c}"><title>${esc(u)} · ${name}: ${nf(v)}</title></path><text x="${x + bw / 2}" y="${yy - 4}" class="cv" text-anchor="middle">${nf(v)}</text>`; };
+  const groups = list.map((u, k) => { const cx = L + k * gw + gw / 2;
+    return bar(cx - bw - 1, u.in, "#0F766E", "Stock In", u.label) + bar(cx + 1, u.out, "#B4532A", "Stock Out", u.label)
+      + `<text x="${cx}" y="${H - 10}" class="cl${u.id ? " lnkt" : ""}" text-anchor="middle" ${u.id ? `data-act="invHostel" data-id="${u.id}"` : ""}><title>${esc(u.label)}</title>${esc(short(u.label))}</text>`; }).join("");
+  const tot = (k) => list.reduce((a, u) => a + u[k], 0);
+  return `<div class="legend"><span class="lg"><i style="background:#0F766E"></i>Stock In <b>${nf(tot("in"))}</b></span><span class="lg"><i style="background:#B4532A"></i>Stock Out <b>${nf(tot("out"))}</b></span></div><svg class="svgc" viewBox="0 0 ${W} ${H}" role="img" aria-label="Stock in and out by unit, last 30 days">${grid}<line x1="${L}" x2="${W - Rr}" y1="${H - B}" y2="${H - B}" class="ca"/>${groups}</svg>`;
+}
+// Heatmap: units down the side, the last 8 weeks across; darker = more quantity.
+function heatmap(rows, weeks, kind) {
+  const max = Math.max(0, ...rows.flatMap((r) => r.vals));
+  if (!max) return `<div class="empty">${ic("inbox")}<div>No stock ${kind} in the last 8 weeks.</div></div>`;
+  const rgb = kind === "in" ? "15,118,110" : "180,83,42", ink = kind === "in" ? "#085041" : "#7a2f12";
+  rows = rows.slice().sort((a, b) => b.vals.reduce((x, y) => x + y, 0) - a.vals.reduce((x, y) => x + y, 0));
+  const cell = (v, r, w) => { const t = v / max;
+    return `<span class="hc" style="${v ? `background:rgba(${rgb},${(0.14 + t * 0.86).toFixed(2)});color:${t > 0.45 ? "#fff" : ink}` : ""}" title="${esc(r.label)} · ${fmtD(w.from)} – ${fmtD(w.to)}: ${nf(v)}">${v ? nf(v) : ""}</span>`; };
+  return `<div class="hm" style="--cols:${weeks.length}"><span></span>${weeks.map((w) => `<span class="hw">${fmtD(w.from).slice(0, 5)}</span>`).join("")}<span class="hw ht">Total</span>`
+    + rows.map((r) => `<span class="hu lnk" data-act="invHostel" data-id="${r.id}" title="${esc(r.label)}">${esc(r.label)}</span>${r.vals.map((v, k) => cell(v, r, weeks[k])).join("")}<b class="htot">${nf(r.vals.reduce((a, b) => a + b, 0))}</b>`).join("")
+    + `</div><div class="hmnote">Weeks start on the date shown · darker = more quantity</div>`;
 }
 // Donut for a part-to-whole of up to 3–4 parts, every part labelled with its count.
 function donut(parts, unit) {
@@ -1714,6 +1736,7 @@ const ACT = {
   issue: (el) => issueForm(el.dataset.kind || "transfer"),
   stockin: () => stockForm(),
   bulkup: () => bulkForm(),
+  hmkind: (el) => { S.hmKind = el.dataset.v; render(); },
   countin: () => countForm(),
   cntok: (el) => countDecideForm(+el.dataset.id, true),
   cntno: (el) => countDecideForm(+el.dataset.id, false),
