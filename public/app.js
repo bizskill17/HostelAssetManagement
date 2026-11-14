@@ -612,9 +612,12 @@ V.issues = () => {
   const n = (k) => rows.filter((i) => i.kind === k).length;
   const nb = (k) => base.filter((i) => !k || i.kind === k).length;
   const apTotal = Object.values(APPR).reduce((s, a) => s + a.list().length, 0);
-  const apBtn = `<div class="apwrap"><button type="button" class="tk-appr${ap ? " on" : ""}" data-act="apprmenu" aria-haspopup="true" aria-expanded="${!!S.apprOpen}">${ic("check")}${ap ? `Approval: ${ap.l}` : "Approval"}<span class="n${apTotal ? " hot" : ""}">${ap ? pend.size : apTotal}</span>${ic("chev")}</button>${S.apprOpen ? `<div class="apmenu" role="menu">${Object.entries(APPR).map(([k, a]) => `<button type="button" role="menuitem" class="apit${f.appr === k ? " on" : ""}" data-act="appr" data-v="${k}"><span class="aico t-${a.c}">${ic(a.i)}</span><span class="apt"><b>${a.l}</b><span>${esc(a.sub())}</span></span><span class="apn t-${a.c}">${a.list().length}</span></button>`).join("")}</div>` : ""}</div>`;
-  const tabs = `<div class="segtabs coltabs" role="tablist">${apBtn}${[["", "All", "list"], ["transfer", "Transfer", "move"], ["repair", "Repair", "wrench"], ["damage", "Damage", "alert"]]
-    .map(([k, l, icn]) => `<button type="button" role="tab" class="tk-${k || "all"}${!ap && (f.kind || "") === k ? " on" : ""}" aria-selected="${!ap && (f.kind || "") === k}" data-act="ftab" data-key="issues" data-k="kind" data-v="${k}">${ic(icn)}${l}<span class="n">${nb(k)}</span></button>`).join("")}</div>`;
+  const apBtn = `<div class="apwrap"><button type="button" class="tk-appr${ap ? " on" : ""}" data-act="apprmenu" data-m="appr" aria-haspopup="true" aria-expanded="${S.apprOpen === "appr"}">${ic("check")}${ap ? `Approval: ${ap.l}` : "Approval"}<span class="n${apTotal ? " hot" : ""}">${ap ? pend.size : apTotal}</span>${ic("chev")}</button>${S.apprOpen === "appr" ? `<div class="apmenu" role="menu">${Object.entries(APPR).map(([k, a]) => `<button type="button" role="menuitem" class="apit${f.appr === k ? " on" : ""}" data-act="appr" data-v="${k}"><span class="aico t-${a.c}">${ic(a.i)}</span><span class="apt"><b>${a.l}</b><span>${esc(a.sub())}</span></span><span class="apn t-${a.c}">${a.list().length}</span></button>`).join("")}</div>` : ""}</div>`;
+  // Entry Type: All / Transfer / Repair / Damage in one dropdown, coloured by the chosen type.
+  const TYPES = [["", "All Entries", "list", "blue"], ["transfer", "Transfer", "move", "violet"], ["repair", "Repair", "wrench", "amber"], ["damage", "Damage", "alert", "red"]];
+  const cur = TYPES.find(([k]) => k === (ap ? "" : f.kind || "")) || TYPES[0];
+  const tyBtn = `<div class="apwrap"><button type="button" class="tk-${cur[0] || "all"}${ap ? "" : " on"}" data-act="apprmenu" data-m="type" aria-haspopup="true" aria-expanded="${S.apprOpen === "type"}">${ic(cur[2])}<span class="pfx">Entry Type: </span>${cur[0] ? cur[1] : "All"}<span class="n">${nb(cur[0])}</span>${ic("chev")}</button>${S.apprOpen === "type" ? `<div class="apmenu" role="menu">${TYPES.map(([k, l, icn, c]) => `<button type="button" role="menuitem" class="apit${!ap && (f.kind || "") === k ? " on" : ""}" data-act="ftab" data-key="issues" data-k="kind" data-v="${k}"><span class="aico t-${c}">${ic(icn)}</span><span class="apt"><b>${l}</b></span><span class="apn t-${c}">${nb(k)}</span></button>`).join("")}</div>` : ""}</div>`;
+  const tabs = `<div class="segtabs coltabs" role="tablist">${apBtn}${tyBtn}</div>`;
   return head("Out Register", "Every transfer, repair and damage entry", `${csvBtn("issues")}<button class="btn pri" data-act="issue">${ic("plus")}<span class="l">Issue Asset</span></button>`)
     + stats([
       { v: nf(rows.length), l: "Issues" },
@@ -1444,7 +1447,7 @@ const ACT = {
   sortdir: (el) => { const st = S.sort[el.dataset.key]; if (st) st.dir = -st.dir; if (el.dataset.key === "hist") drawHist(); else render(); },
   page: (el) => { S.page[el.dataset.key] = +el.dataset.p; render(); window.scrollTo({ top: 0, behavior: "smooth" }); },
   ftab: (el) => { const f = fv(el.dataset.key); f[el.dataset.k] = el.dataset.v; f.appr = ""; S.apprOpen = false; S.page[el.dataset.key] = 0; render(); },
-  apprmenu: () => { S.apprOpen = !S.apprOpen; render(); },
+  apprmenu: (el) => { S.apprOpen = S.apprOpen === el.dataset.m ? false : el.dataset.m; render(); },
   appr: (el) => { const f = fv("issues"); f.appr = el.dataset.v; f.kind = ""; S.apprOpen = false; S.page.issues = 0; render(); },
   clearf: (el) => { S.f[el.dataset.key] = {}; S.page[el.dataset.key] = 0; render(); },
   ledger: (el) => historyPopup(+el.dataset.i, el.dataset.h ? +el.dataset.h : M.multi ? 0 : M.scopeH[0]),
@@ -1567,7 +1570,7 @@ function route() {
   S.view = V[v] && (!nav || !nav.admin || M.admin) ? v : "home";
   if (arg && (S.view === "repairs" || S.view === "allrepairs")) S.f[S.view] = { st: arg };
   if (arg && S.view === "warranties") S.f.warranties = { st: arg };
-  if (arg && S.view === "issues") { S.f.issues = { appr: APPR[arg] ? arg : "" }; S.apprOpen = arg === "approvals"; }
+  if (arg && S.view === "issues") { S.f.issues = { appr: APPR[arg] ? arg : "" }; S.apprOpen = arg === "approvals" ? "appr" : false; }
   if (arg) history.replaceState(null, "", "#" + S.view);
   document.body.classList.remove("drawer");
   render();
