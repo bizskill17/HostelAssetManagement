@@ -562,7 +562,14 @@ try {
                     if ($name === '') {
                         fail('Enter the item name.');
                     }
-                    $vals = [$name, idOrNull($d['categoryId'] ?? null), str($d['unit'] ?? '', 20) ?: 'Nos', str($d['notes'] ?? ''), empty($d['active']) ? 0 : 1];
+                    $cid = idOrNull($d['categoryId'] ?? null);
+                    if (!$cid || !q("SELECT 1 FROM ha_categories WHERE id=?", [$cid])->fetchColumn()) {
+                        fail('Choose the category.');
+                    }
+                    if (str($d['unit'] ?? '', 20) === '') {
+                        fail('Choose the measuring unit.');
+                    }
+                    $vals = [$name, $cid, str($d['unit'] ?? '', 20), str($d['notes'] ?? ''), empty($d['active']) ? 0 : 1];
                     if ($id) {
                         q("UPDATE ha_items SET name=?, category_id=?, unit=?, notes=?, active=? WHERE id=?", [...$vals, $id]);
                     } else {

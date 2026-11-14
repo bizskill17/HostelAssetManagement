@@ -901,8 +901,8 @@ const MASTERS = {
       { h: "Status", t: (r) => (r.active ? "Active" : "Inactive"), html: (r) => (r.active ? `<span class="b green">Active</span>` : `<span class="b">Inactive</span>`) },
     ],
     fields: [{ k: "name", l: "Item name", req: 1, ph: "e.g. Single bed, steel" },
-      { k: "categoryId", l: "Category", type: "select", half: 1, opts: () => catOpts(), blank: "— None —", add: ADD_CATEGORY },
-      { k: "unit", l: "Measuring unit", type: "select", half: 1, val: "Nos", opts: (v) => unitOpts(v.unit), add: ADD_UNIT },
+      { k: "categoryId", l: "Category", type: "select", req: 1, half: 1, opts: () => catOpts(), blank: "— Choose category —", add: ADD_CATEGORY },
+      { k: "unit", l: "Measuring unit", type: "select", req: 1, half: 1, val: "Nos", opts: (v) => unitOpts(v.unit), add: ADD_UNIT },
       { k: "notes", l: "Notes" }, { k: "active", l: "Active (shown in forms)", type: "check", val: true }],
   },
   categories: {
