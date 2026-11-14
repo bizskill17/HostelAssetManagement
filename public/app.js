@@ -514,7 +514,7 @@ V.stock = () => {
   const cols = [
     { h: "Date", t: (t) => t.at, html: (t) => fmtD(t.at), cls: "nw" },
     { h: "Unit", t: (t) => hName(t.hostelId), cls: "nw" },
-    { h: "Item", t: (t) => iName(t.itemId) + (serialOf(t) ? ` (Serial No. ${serialOf(t)})` : ""), html: (t) => `<span class="lnk" data-act="ledger" data-h="${t.hostelId}" data-i="${t.itemId}">${esc(iName(t.itemId))}</span>${serialOf(t) ? `<div class="sn">Serial No. ${esc(serialOf(t))}</div>` : ""}` },
+    { h: "Item", t: (t) => iName(t.itemId) + (serialOf(t) ? `(${serialOf(t)})` : ""), html: (t) => `<span class="lnk" data-act="ledger" data-h="${t.hostelId}" data-i="${t.itemId}">${esc(iName(t.itemId) + (serialOf(t) ? `(${serialOf(t)})` : ""))}</span>` },
     { h: "Type", t: (t) => KIND[t.kind].l, html: (t) => badge(KIND[t.kind]) },
     { h: "Qty", t: (t) => t.qty, num: 1, html: (t) => `<span class="qin">${nf(t.qty)}</span>` },
     { h: "UoM", t: (t) => iUnit(t.itemId), cls: "dim" },
@@ -538,7 +538,7 @@ V.stock = () => {
       { k: "c", l: "Category", opts: catOpts(), all: "All categories" },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
     ])
-    + table("stock", cols, rows, { card: (t) => ({ tone: t.kind === "opening" ? "blue" : "green", title: `<span class="lnk" data-act="ledger" data-h="${t.hostelId}" data-i="${t.itemId}">${esc(iName(t.itemId))}</span>${serialOf(t) ? `<div class="sn">Serial No. ${esc(serialOf(t))}</div>` : ""}`, qty: `${nf(t.qty)} <small>${esc(iUnit(t.itemId))}</small>`, sub: esc(hName(t.hostelId)), meta: `${fmtD(t.at)} · ${esc(uName(t.createdBy))}`, status: badge(KIND[t.kind]), extra: [["Notes", esc(t.notes || "")]] }), csv: "stock-in", empty: "No stock entered yet." });
+    + table("stock", cols, rows, { card: (t) => ({ tone: t.kind === "opening" ? "blue" : "green", title: `<span class="lnk" data-act="ledger" data-h="${t.hostelId}" data-i="${t.itemId}">${esc(iName(t.itemId) + (serialOf(t) ? `(${serialOf(t)})` : ""))}</span>`, qty: `${nf(t.qty)} <small>${esc(iUnit(t.itemId))}</small>`, sub: esc(hName(t.hostelId)), meta: `${fmtD(t.at)} · ${esc(uName(t.createdBy))}`, status: badge(KIND[t.kind]), extra: [["Notes", esc(t.notes || "")]] }), csv: "stock-in", empty: "No stock entered yet." });
 };
 
 /* ---------- issue register ---------- */
