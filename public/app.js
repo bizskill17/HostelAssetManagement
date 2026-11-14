@@ -89,8 +89,8 @@ async function api(a, body) {
 }
 
 /* ---------- dates ---------- */
-const fmtD = (s) => { if (!s) return "—"; const [y, m, d] = String(s).slice(0, 10).split("-"); return `${d}/${m}/${y}`; };
-const fmtTs = (ms) => { if (!ms) return "—"; const d = new Date(ms); return fmtD(isoOf(d)); };
+const fmtD = (s) => { if (!s) return ""; const [y, m, d] = String(s).slice(0, 10).split("-"); return `${d}/${m}/${y}`; };
+const fmtTs = (ms) => { if (!ms) return ""; const d = new Date(ms); return fmtD(isoOf(d)); };
 const isoOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const today = () => (S.d && S.d.today) || isoOf(new Date());
 const daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
@@ -174,12 +174,12 @@ function derive() {
 // System qty of an item at a location at the end of a date.
 const bookOn = (hid, iid, at) => S.d.txns.reduce((s, t) => (t.hostelId === hid && t.itemId === iid && t.at <= at ? s + t.dir * t.qty : s), 0);
 const diffHtml = (d) => (d > 0 ? `<span class="qin">+${nf(d)}</span>` : d < 0 ? `<span class="qout">−${nf(-d)}</span>` : `<span class="dim">0</span>`);
-const hName = (id) => (M.H.get(id) || {}).name || "—";
+const hName = (id) => (M.H.get(id) || {}).name || "";
 const inS = (id) => M.scopeSet.has(id);
 // Damage is approved by Admin, Organization, or the Foundation the unit / warehouse belongs to.
 const canApprove = (hid) => M.all || (M.role === "Foundation" && inS(hid));
 const isWh = (id) => (M.H.get(id) || {}).kind === "warehouse";
-const fName = (id) => (M.F.get(id) || {}).name || "—";
+const fName = (id) => (M.F.get(id) || {}).name || "";
 // Item name of an issue, with the Serial No. of a warranty piece: "DG BIG(221)".
 const issueItem = (i) => iName(i.itemId) + (i.serialNo ? `(${i.serialNo})` : "");
 // Serial Nos. of a warranty item at a unit / warehouse that are free to issue (not in an open entry, not written off).
@@ -190,10 +190,10 @@ const freeSerials = (hid, iid) => {
 const itemHasWarranty = (iid) => !!(M.C.get((M.I.get(iid) || {}).categoryId) || {}).warranty;
 // Units and Central Warehouses for dropdowns, grouped by Foundation (warehouse first).
 const locOpts = (ids) => S.d.hostels.filter((h) => ids.includes(h.id)).sort((a, b) => cmp(fName(a.foundationId), fName(b.foundationId)) || (b.kind === "warehouse") - (a.kind === "warehouse") || cmp(a.name, b.name)).map((h) => [h.id, h.name]);
-const iName = (id) => (M.I.get(id) || {}).name || "—";
+const iName = (id) => (M.I.get(id) || {}).name || "";
 const iUnit = (id) => (M.I.get(id) || {}).unit || "";
-const iCat = (id) => (M.C.get((M.I.get(id) || {}).categoryId) || {}).name || "—";
-const uName = (id) => (id ? (M.U.get(id) || {}).name || "—" : "System");
+const iCat = (id) => (M.C.get((M.I.get(id) || {}).categoryId) || {}).name || "";
+const uName = (id) => (id ? (M.U.get(id) || {}).name || "" : "System");
 const available = (h, i) => { const r = M.inv.get(h + "|" + i); return r ? r.current - r.pendingOut - r.pendingDmg : 0; };
 const outstanding = (i) => i.qty - i.returnedQty - i.scrappedQty;
 const isOverdue = (i) => i.expectedAt && i.expectedAt < today() && outstanding(i) > 0;
@@ -470,9 +470,9 @@ V.inventory = () => {
     { h: "At repair", t: (r) => r.atRepair, num: 1, cls: "dim", foot: () => nf(sum("atRepair")) },
     { h: "Damage pending", t: (r) => r.pendingDmg || "", num: 1, cls: "dim" },
     { h: "Transfer pending", t: (r) => (r.pendingOut ? `−${r.pendingOut}` : "") + (r.pendingOut && r.pendingIn ? " / " : "") + (r.pendingIn ? `+${r.pendingIn}` : ""), cls: "dim nw", nosort: 1 },
-    { h: "Physical Date", t: (r) => (r.pc ? r.pc.at : ""), html: (r) => (r.pc ? fmtD(r.pc.at) : `<span class="dim">—</span>`), cls: "nw" },
-    { h: "Physical Qty", t: (r) => (r.pc ? r.pc.physicalQty : ""), num: 1, html: (r) => (r.pc ? `<b>${nf(r.pc.physicalQty)}</b>` : `<span class="dim">—</span>`) },
-    { h: "Difference", t: (r) => (r.pc ? r.pc.diff : ""), num: 1, html: (r) => (r.pc ? diffHtml(r.pc.diff) + (r.pc.status === "pending" ? ` <span class="b amber" title="Waiting for approval">Pending</span>` : "") : `<span class="dim">—</span>`) },
+    { h: "Physical Date", t: (r) => (r.pc ? r.pc.at : ""), html: (r) => (r.pc ? fmtD(r.pc.at) : ""), cls: "nw" },
+    { h: "Physical Qty", t: (r) => (r.pc ? r.pc.physicalQty : ""), num: 1, html: (r) => (r.pc ? `<b>${nf(r.pc.physicalQty)}</b>` : "") },
+    { h: "Difference", t: (r) => (r.pc ? r.pc.diff : ""), num: 1, html: (r) => (r.pc ? diffHtml(r.pc.diff) + (r.pc.status === "pending" ? ` <span class="b amber" title="Waiting for approval">Pending</span>` : "") : "") },
   ];
   return head("Inventory", `${esc(combine ? "All units combined" : scopeText())} · click an item to see its history`, `${csvBtn("inventory")}<button class="btn pri" data-act="issue">${ic("plus")}<span class="l">Issue Asset</span></button>`)
     + stats([
@@ -546,83 +546,88 @@ V.physical = () => {
         extra: [["Notes", esc([c.note, c.decisionNote && "Note: " + c.decisionNote].filter(Boolean).join(" · "))]] }),
     });
 };
-// Count form: pick the location and date, then enter the physical qty for each item. Blank lines are skipped.
+// Count form: pick the location and date, then add items one by one from the dropdown and enter the physical qty.
 function countForm() {
   closeDlg();
   const locs = locOpts(M.scopeH);
-  const st = { h: M.multi ? "" : String(M.scopeH[0]), at: today(), all: false, q: "", v: {}, n: {} };
+  const st = { h: M.multi ? "" : String(M.scopeH[0]), at: today(), rows: [{ id: "", v: "", n: "" }] };
   const w = document.createElement("div");
   w.className = "dlg";
   w.innerHTML = `<form novalidate class="box wide"><div class="dh"><div><h2>Add Physical Count</h2></div><button type="button" class="iconbtn" data-close aria-label="Close">${ic("x")}</button></div>
     <div class="db">
-      <div class="fld half"><label>Unit / Warehouse <span class="req">*</span></label><select id="pcH"><option value="">Choose…</option>${locs.map(([id, n]) => `<option value="${id}"${String(id) === st.h ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></div>
+      <div class="fld half"><label>Unit / Warehouse <span class="req">*</span></label><select id="pcH"><option value="">— Choose —</option>${locs.map(([id, n]) => `<option value="${id}"${String(id) === st.h ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></div>
       <div class="fld half"><label>Count Date <span class="req">*</span></label><input type="date" id="pcAt" value="${st.at}" max="${today()}"></div>
-      <div class="pcbar"><div class="search">${ic("search")}<input class="inp" id="pcQ" placeholder="Search item" autocomplete="off"></div><label class="chk"><input type="checkbox" id="pcAll"> Show all items</label><span id="pcSum" class="dim"></span></div>
-      <div id="pcList"></div><div class="err" id="pcErr"></div>
+      <div id="pcList"></div>
+      <div class="pcbar"><button type="button" class="btn" id="pcAdd">${ic("plus")}Add Item</button><span id="pcSum" class="dim"></span></div>
+      <div class="err" id="pcErr"></div>
     </div>
     <div class="df"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn pri" id="pcGo">Save Count</button></div></form>`;
   document.body.appendChild(w);
   enhanceAll(w);
   const list = $("#pcList", w), err = $("#pcErr", w), sum = $("#pcSum", w);
-  const lines = () => {
-    if (!st.h) return [];
-    const hid = +st.h;
-    const used = new Set(S.d.txns.filter((t) => t.hostelId === hid).map((t) => t.itemId));
-    return S.d.items.filter((i) => (st.all || used.has(i.id)) && match(st.q, i.name, iCat(i.id)))
-      .map((i) => ({ i, book: bookOn(hid, i.id, st.at) }))
-      .sort((a, b) => cmp(iCat(a.i.id), iCat(b.i.id)) || cmp(a.i.name, b.i.name));
-  };
+  const book = (id) => (st.h && id ? bookOn(+st.h, +id, st.at) : null);
   const totals = () => {
-    const ent = Object.entries(st.v).filter(([, v]) => v !== "");
-    const hid = +st.h;
-    const d = ent.filter(([id, v]) => +v !== bookOn(hid, +id, st.at)).length;
-    sum.textContent = ent.length ? `${nf(ent.length)} entered · ${nf(d)} with a difference` : "";
+    const ent = st.rows.filter((r) => r.id && r.v !== "");
+    const d = ent.filter((r) => +r.v !== book(r.id)).length;
+    sum.textContent = ent.length ? `${nf(ent.length)} item${ent.length === 1 ? "" : "s"} · ${nf(d)} with a difference` : "";
+  };
+  const rowHtml = (r, k) => {
+    const b = book(r.id), d = r.id && r.v !== "" ? +r.v - b : null;
+    const taken = new Set(st.rows.filter((x, j) => j !== k && x.id).map((x) => x.id));
+    const opts = groupedItems(S.d.items.filter((i) => !taken.has(String(i.id))));
+    return `<tr data-k="${k}" class="${d ? "pcd" : ""}">
+      <td data-l="Item"><select class="pci" aria-label="Item"><option value="">— Choose item —</option>${opts.map(([id, l]) => `<option value="${id}"${String(id) === r.id ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></td>
+      <td data-l="System" class="num">${b == null ? "" : nf(b)}</td>
+      <td data-l="Physical" class="num"><input class="pcq" type="number" min="0" step="1" inputmode="numeric" value="${esc(r.v)}" aria-label="Physical qty"></td>
+      <td data-l="Difference" class="num pcdiff">${d == null ? "" : diffHtml(d)}</td>
+      <td data-l="Note"><input class="pcn inp" value="${esc(r.n)}" ${d ? `placeholder="Reason for the difference"` : "disabled"} aria-label="Note"></td>
+      <td data-l="" class="num">${st.rows.length > 1 ? `<button type="button" class="iconbtn del" data-rm="${k}" aria-label="Remove item">${ic("trash")}</button>` : ""}</td></tr>`;
   };
   const draw = () => {
-    if (!st.h) { list.innerHTML = `<div class="empty">${ic("box")}<div>Choose the unit or warehouse to count.</div></div>`; totals(); return; }
-    const L = lines();
-    if (!L.length) { list.innerHTML = `<div class="empty">${ic("inbox")}<div>${st.all || st.q ? "No items match." : "No stock history here. Tick Show all items to count anything."}</div></div>`; totals(); return; }
-    list.innerHTML = `<div class="tw pctw"><table><thead><tr><th>Item</th><th>Category</th><th class="num">System Qty</th><th class="num">Physical Qty</th><th class="num">Difference</th><th>Note</th></tr></thead><tbody>${L.map(({ i, book }) => {
-      const v = st.v[i.id] ?? "", d = v === "" ? null : +v - book;
-      return `<tr data-iid="${i.id}" data-book="${book}" class="${d ? "pcd" : ""}"><td data-l="Item"><b>${esc(i.name)}</b> <small class="dim">${esc(i.unit)}</small></td><td data-l="Category" class="dim">${esc(iCat(i.id))}</td><td data-l="System" class="num">${nf(book)}</td>
-        <td data-l="Physical" class="num"><input class="pcq" type="number" min="0" step="1" inputmode="numeric" value="${esc(v)}" aria-label="Physical qty of ${esc(i.name)}"></td>
-        <td data-l="Difference" class="num pcdiff">${d == null ? `<span class="dim">—</span>` : diffHtml(d)}</td>
-        <td data-l="Note"><input class="pcn inp" value="${esc(st.n[i.id] || "")}" ${d ? "" : "disabled"} aria-label="Note for ${esc(i.name)}"></td></tr>`;
-    }).join("")}</tbody></table></div>`;
+    list.innerHTML = `<div class="tw pctw"><table><thead><tr><th>Item</th><th class="num">System Qty</th><th class="num">Physical Qty</th><th class="num">Difference</th><th>Note</th><th></th></tr></thead><tbody>${st.rows.map(rowHtml).join("")}</tbody></table></div>`;
+    enhanceAll(list);
+    totals();
+  };
+  const upd = (tr) => {
+    const r = st.rows[+tr.dataset.k], b = book(r.id), d = r.id && r.v !== "" ? +r.v - b : null;
+    $(".pcdiff", tr).innerHTML = d == null ? "" : diffHtml(d);
+    tr.classList.toggle("pcd", !!d);
+    const n = $(".pcn", tr); n.disabled = !d; n.placeholder = d ? "Reason for the difference" : "";
     totals();
   };
   list.addEventListener("input", (e) => {
-    const tr = e.target.closest("tr[data-iid]"); if (!tr) return;
-    const id = +tr.dataset.iid, book = +tr.dataset.book;
-    if (e.target.classList.contains("pcq")) {
-      const v = e.target.value.trim(); st.v[id] = v;
-      const d = v === "" ? null : +v - book;
-      $(".pcdiff", tr).innerHTML = d == null ? `<span class="dim">—</span>` : diffHtml(d);
-      tr.classList.toggle("pcd", !!d);
-      const n = $(".pcn", tr); n.disabled = !d; if (d) n.placeholder = "Reason for the difference";
-      totals();
-    } else st.n[id] = e.target.value;
+    const tr = e.target.closest("tr[data-k]"); if (!tr) return;
+    const r = st.rows[+tr.dataset.k];
+    if (e.target.classList.contains("pcq")) { r.v = e.target.value.trim(); upd(tr); } else if (e.target.classList.contains("pcn")) r.n = e.target.value;
   });
-  $("#pcH", w).onchange = (e) => { st.h = e.target.value; st.v = {}; st.n = {}; draw(); };
+  list.addEventListener("change", (e) => {
+    if (!e.target.classList.contains("pci")) return;
+    const k = +e.target.closest("tr[data-k]").dataset.k;
+    st.rows[k].id = e.target.value;
+    // Choosing an item in the last row opens a fresh row below it.
+    if (k === st.rows.length - 1 && e.target.value) st.rows.push({ id: "", v: "", n: "" });
+    draw();
+    const q = list.querySelector(`tr[data-k="${k}"] .pcq`); if (q) q.focus();
+  });
+  list.addEventListener("click", (e) => { const b = e.target.closest("[data-rm]"); if (b) { st.rows.splice(+b.dataset.rm, 1); draw(); } });
+  $("#pcAdd", w).onclick = () => { st.rows.push({ id: "", v: "", n: "" }); draw(); };
+  $("#pcH", w).onchange = (e) => { st.h = e.target.value; draw(); };
   $("#pcAt", w).onchange = (e) => { st.at = e.target.value || today(); draw(); };
-  $("#pcAll", w).onchange = (e) => { st.all = e.target.checked; draw(); };
-  $("#pcQ", w).oninput = (e) => { st.q = e.target.value.trim(); draw(); };
   w.addEventListener("click", (e) => { if (e.target.closest("[data-close]")) closeDlg(); });
   $("form", w).onsubmit = async (e) => {
     e.preventDefault();
     const bad = (t) => { err.innerHTML = `${ic("alert")}<span>${esc(t)}</span>`; };
     if (!st.h) return bad("Choose the unit or warehouse.");
     if (!st.at || st.at > today()) return bad("Enter the count date (today or earlier).");
-    const hid = +st.h;
-    const ent = Object.entries(st.v).filter(([, v]) => v !== "");
-    if (!ent.length) return bad("Enter the physical qty of at least one item.");
-    for (const [id, v] of ent) {
-      if (!/^\d+$/.test(v)) return bad(`Enter a whole number of 0 or more for ${iName(+id)}.`);
-      if (+v !== bookOn(hid, +id, st.at) && !String(st.n[id] || "").trim()) return bad(`${iName(+id)}: add a note explaining the difference.`);
+    const ent = st.rows.filter((r) => r.id);
+    if (!ent.length) return bad("Choose at least one item.");
+    for (const r of ent) {
+      if (!/^\d+$/.test(r.v)) return bad(`Enter the physical qty for ${iName(+r.id)} (a whole number of 0 or more).`);
+      if (+r.v !== book(r.id) && !r.n.trim()) return bad(`${iName(+r.id)}: add a note explaining the difference.`);
     }
     const go = $("#pcGo", w); go.disabled = true; go.textContent = "Saving…"; err.textContent = "";
     try {
-      const r = await api("count.save", { hostelId: hid, at: st.at, lines: ent.map(([id, v]) => ({ itemId: +id, physicalQty: v, note: st.n[id] || "" })) });
+      const r = await api("count.save", { hostelId: +st.h, at: st.at, lines: ent.map((x) => ({ itemId: +x.id, physicalQty: x.v, note: x.n })) });
       closeDlg(); toast(`${r.no} saved · ${nf(r.lines)} item${r.lines === 1 ? "" : "s"}${r.diffs ? ` · ${nf(r.diffs)} waiting for approval` : " · all matched"}`); await reload();
     } catch (ex) { bad(ex.message); go.disabled = false; go.textContent = "Save Count"; }
   };
@@ -761,7 +766,7 @@ V.stock = () => {
     { h: "Qty", t: (t) => t.qty, num: 1, html: (t) => `<span class="qin">${nf(t.qty)}</span>` },
     { h: "UoM", t: (t) => iUnit(t.itemId), cls: "dim" },
     { h: "Supplier", t: (t) => t.party || "", cls: "wrap" },
-    { h: "Warranty till", t: (t) => (S.d.warranties.find((w) => w.txnId === t.id) || {}).expiryAt || "", html: (t) => { const w = S.d.warranties.find((x) => x.txnId === t.id); return w ? fmtD(w.expiryAt) : `<span class="dim">—</span>`; }, cls: "nw" },
+    { h: "Warranty till", t: (t) => (S.d.warranties.find((w) => w.txnId === t.id) || {}).expiryAt || "", html: (t) => { const w = S.d.warranties.find((x) => x.txnId === t.id); return w ? fmtD(w.expiryAt) : ""; }, cls: "nw" },
     { h: "Notes", t: (t) => t.notes || "", cls: "wrap" },
     { h: "Entered by", t: (t) => uName(t.createdBy), cls: "dim nw" },
   ];
@@ -789,7 +794,7 @@ function issueCols(withActs = true) {
     { h: "No.", t: (i) => i.no, html: (i) => `<span class="mono">${esc(i.no)}</span>`, cls: "nw" },
     { h: "Date", t: (i) => i.at, html: (i) => fmtD(i.at), cls: "nw" },
     { h: "Type", t: (i) => ISSUE_KIND[i.kind].l, html: (i) => badge(ISSUE_KIND[i.kind]) },
-    { h: "Repair type", t: (i) => (i.kind === "repair" ? i.repairType || "External" : ""), html: (i) => (i.kind === "repair" ? `<span class="b ${i.repairType === "Internal" ? "cyan" : "violet"}">${esc(i.repairType || "External")}</span>` : `<span class="dim">—</span>`) },
+    { h: "Repair type", t: (i) => (i.kind === "repair" ? i.repairType || "External" : ""), html: (i) => (i.kind === "repair" ? `<span class="b ${i.repairType === "Internal" ? "cyan" : "violet"}">${esc(i.repairType || "External")}</span>` : "") },
     { h: "From", t: (i) => hName(i.hostelId), cls: "nw" },
     { h: "Item", t: (i) => issueItem(i), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>` },
     { h: "Qty", t: (i) => i.qty, num: 1, html: (i) => `<b>${nf(i.qty)}</b> <span class="dim">${esc(iUnit(i.itemId))}</span>` },
@@ -804,7 +809,7 @@ function issueCols(withActs = true) {
 }
 function recvHtml(i) {
   if (i.kind !== "transfer") return "";
-  if (i.receivedQty == null) return i.status === "pending" ? `<span class="dim">—</span>` : "";
+  if (i.receivedQty == null) return i.status === "pending" ? "" : "";
   return i.receivedQty < i.qty ? `<span class="qout">${nf(i.receivedQty)}</span>` : `<span class="qin">${nf(i.receivedQty)}</span>`;
 }
 const isReceived = (i) => i.kind === "transfer" && ["received", "short", "approved"].includes(i.status);
@@ -925,7 +930,7 @@ V.damage = () => {
     { h: "Item", t: (i) => issueItem(i), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>` },
     { h: "UoM", t: (i) => iUnit(i.itemId), cls: "dim" },
     { h: "Reported qty", t: (i) => i.qty, num: 1, html: (i) => `<b>${nf(i.qty)}</b>` },
-    { h: "Approved qty", t: (i) => i.receivedQty ?? "", num: 1, html: (i) => (i.receivedQty == null ? `<span class="dim">—</span>` : i.receivedQty < i.qty ? `<span class="qout">${nf(i.receivedQty)}</span>` : nf(i.receivedQty)) },
+    { h: "Approved qty", t: (i) => i.receivedQty ?? "", num: 1, html: (i) => (i.receivedQty == null ? "" : i.receivedQty < i.qty ? `<span class="qout">${nf(i.receivedQty)}</span>` : nf(i.receivedQty)) },
     { h: "Sent to", t: (i) => i.place || "", cls: "nw" },
     { h: "Status", t: (i) => issueStatus(i).l, html: (i) => badge(issueStatus(i)) },
     { h: "Reported by", t: (i) => uName(i.createdBy), cls: "dim nw" },
@@ -985,7 +990,7 @@ function repairsView(key, pendingOnly) {
     { h: "Returned", t: (i) => i.returnedQty, num: 1, html: (i) => (i.returnedQty ? `<span class="qin">${nf(i.returnedQty)}</span>` : "0") },
     { h: "Not repairable", t: (i) => i.scrappedQty, num: 1, html: (i) => (i.scrappedQty ? `<span class="qout">${nf(i.scrappedQty)}</span>` : "0") },
     { h: "Still out", t: (i) => outstanding(i), num: 1, html: (i) => `<b>${nf(outstanding(i))}</b>` },
-    { h: "Expected back", t: (i) => i.expectedAt || "", html: (i) => (i.expectedAt ? (isOverdue(i) ? `<span class="qout" title="Overdue">${fmtD(i.expectedAt)}</span>` : fmtD(i.expectedAt)) : `<span class="dim">—</span>`), cls: "nw" },
+    { h: "Expected back", t: (i) => i.expectedAt || "", html: (i) => (i.expectedAt ? (isOverdue(i) ? `<span class="qout" title="Overdue">${fmtD(i.expectedAt)}</span>` : fmtD(i.expectedAt)) : ""), cls: "nw" },
     { h: "Days out", t: (i) => (outstanding(i) > 0 ? daysBetween(i.at, today()) : ""), num: 1, cls: "dim" },
     { h: "Status", t: (i) => issueStatus(i).l, html: (i) => (isOverdue(i) ? `<span class="b red">Overdue</span>` : badge(issueStatus(i))) },
     { h: "Notes", t: (i) => i.notes || "", cls: "wrap" },
@@ -1104,9 +1109,9 @@ const MASTERS = {
     search: (r) => [r.name],
     cols: [
       { h: "Foundation", t: (r) => r.name, cls: "strong" },
-      { h: "Central Warehouse", t: (r) => (S.d.hostels.find((h) => h.kind === "warehouse" && h.foundationId === r.id) || {}).name || "", html: (r) => { const w = S.d.hostels.find((h) => h.kind === "warehouse" && h.foundationId === r.id); return w ? `<span class="lnk" data-act="invHostel" data-id="${w.id}">${esc(w.name)}</span>` : "—"; } },
+      { h: "Central Warehouse", t: (r) => (S.d.hostels.find((h) => h.kind === "warehouse" && h.foundationId === r.id) || {}).name || "", html: (r) => { const w = S.d.hostels.find((h) => h.kind === "warehouse" && h.foundationId === r.id); return w ? `<span class="lnk" data-act="invHostel" data-id="${w.id}">${esc(w.name)}</span>` : ""; } },
       { h: "Units", t: (r) => S.d.hostels.filter((h) => h.kind === "unit" && h.foundationId === r.id).length, num: 1 },
-      { h: "Telegram group", t: (r) => r.tgChat || "", html: (r) => (r.tgChat ? `<span class="b green">Connected</span>` : `<span class="dim">—</span>`) },
+      { h: "Telegram group", t: (r) => r.tgChat || "", html: (r) => (r.tgChat ? `<span class="b green">Connected</span>` : "") },
       { h: "Status", t: (r) => (r.active ? "Active" : "Inactive"), html: (r) => (r.active ? `<span class="b green">Active</span>` : `<span class="b">Inactive</span>`) },
     ],
     fields: [{ k: "name", l: "Foundation name", req: 1 },
@@ -1122,7 +1127,7 @@ const MASTERS = {
       { h: "Type", t: (r) => r.unitType, html: (r) => `<span class="b ${r.unitType === "College" ? "cyan" : "violet"}">${esc(r.unitType)}</span>` },
       { h: "Foundation", t: (r) => fName(r.foundationId), cls: "nw" },
       { h: "Address", t: (r) => r.address, cls: "wrap" },
-      { h: "Telegram group", t: (r) => r.tgChat || "", html: (r) => (r.tgChat ? `<span class="b green">Connected</span>` : `<span class="dim">—</span>`) },
+      { h: "Telegram group", t: (r) => r.tgChat || "", html: (r) => (r.tgChat ? `<span class="b green">Connected</span>` : "") },
       { h: "Unit users", t: (r) => S.d.users.filter((u) => u.hostelId === r.id && u.role === "Unit").map((u) => u.name).join(", "), cls: "wrap" },
       { h: "Items in stock", t: (r) => [...M.inv.values()].filter((x) => x.hostelId === r.id).reduce((s, x) => s + x.current, 0), num: 1 },
       { h: "Status", t: (r) => (r.active ? "Active" : "Inactive"), html: (r) => (r.active ? `<span class="b green">Active</span>` : `<span class="b">Inactive</span>`) },
