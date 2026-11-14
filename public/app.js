@@ -306,7 +306,7 @@ function downloadCSV(key) {
 
 /* ---------- page pieces ---------- */
 // Page title with its buttons. Pages carry no tagline under the title.
-const head = (title, _sub, acts = "") => `<div class="ph"><div><h1>${esc(title)}</h1></div><div class="acts">${acts}</div></div>`;
+const head = (title, _sub, acts = "") => `<div class="ph"><div><h1>${esc(tc(title))}</h1></div><div class="acts">${acts}</div></div>`;
 const csvBtn = (key) => `<button class="btn dl" data-act="csv" data-key="${key}" title="Download as CSV">${ic("download")}<span class="l">Download</span></button>`;
 // Count cards appear only on the Dashboard.
 const stats = (list, onDashboard) => !onDashboard ? "" : `<div class="stats dash">${list.map((s) => `<div class="stat t-${s.tone || "brand"}${s.go ? " click" : ""}" ${s.go ? `data-go="${s.go}"` : ""}><div class="l">${esc(s.l)}</div><div class="v">${esc(s.v)}</div></div>`).join("")}</div>`;
@@ -1497,7 +1497,7 @@ function renderShell() {
       continue;
     }
     const c = n.n ? n.n() : 0;
-    html += `<a href="#${n.v}" class="${S.view === n.v ? "on" : ""}">${ic(n.i)}${esc(n.l)}${c ? `<span class="n${n.hot ? " hot" : ""}">${nf(c)}</span>` : ""}</a>`;
+    html += `<a href="#${n.v}" class="${S.view === n.v ? "on" : ""}">${ic(n.i)}${esc(tc(n.l))}${c ? `<span class="n${n.hot ? " hot" : ""}">${nf(c)}</span>` : ""}</a>`;
   }
   $("#nav").innerHTML = html + (open ? "</div>" : "");
   $("#meBox").innerHTML = `<span class="av">${esc(initials(S.me.name))}</span><div class="t"><b>${esc(S.me.name)}</b><span>${esc(S.me.role)}${M.all ? "" : " · " + esc(userScope(S.me))}</span></div><button class="iconbtn" title="Log out" data-act="logout">${ic("logout")}</button>`;
