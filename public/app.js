@@ -328,9 +328,6 @@ V.home = () => {
   const incoming = M.incoming.slice(0, 6);
   const recent = S.d.txns.filter((t) => t.kind !== "opening").slice().sort((a, b) => b.createdAt - a.createdAt || b.id - a.id).slice(0, 8);
   const repairs = M.openRepairs.slice().sort((a, b) => cmp(a.expectedAt || "9999", b.expectedAt || "9999")).slice(0, 5);
-  const warr = M.warr.filter((w) => w.daysLeft <= 90).sort((a, b) => a.daysLeft - b.daysLeft).slice(0, 5);
-  const byH = M.multi ? S.d.hostels.filter((h) => inS(h.id)).map((h) => ({ h, n: rows.filter((r) => r.hostelId === h.id).reduce((s, r) => s + r.current, 0) })) : [];
-  const maxH = Math.max(1, ...byH.map((x) => x.n));
 
   const apprList = incoming.length ? `<ul class="list">${incoming.map((i) => `<li><div class="ic violet">${ic("move")}</div><div class="tx"><b>${esc(issueItem(i))} × ${nf(i.qty)} ${esc(iUnit(i.itemId))}</b><span>${esc(hName(i.hostelId))} → ${esc(hName(i.toHostelId))} · ${fmtD(i.at)} · <span class="mono">${esc(i.no)}</span></span></div><div class="rt acts">${canWriteHostel(i.toHostelId) ? `<button class="btn sm pri" data-act="receive" data-id="${i.id}">${ic("edit")}Update</button>` : ""}</div></li>`).join("")}</ul>`
     : `<div class="empty">${ic("check")}<div>No incoming transfers waiting to be received.</div></div>`;
@@ -338,9 +335,24 @@ V.home = () => {
     : `<div class="empty">${ic("inbox")}<div>No movements yet.</div></div>`;
   const repList = repairs.length ? `<ul class="list">${repairs.map((i) => `<li><div class="ic amber">${ic("wrench")}</div><div class="tx"><b>${esc(issueItem(i))} × ${nf(outstanding(i))}</b><span>${esc(hName(i.hostelId))}${i.place ? " · " + esc(i.place) : ""} · sent ${fmtD(i.at)}</span></div><div class="rt">${isOverdue(i) ? `<span class="b red">Overdue</span>` : i.expectedAt ? `<span class="b">Due ${fmtD(i.expectedAt)}</span>` : ""}</div></li>`).join("")}</ul>`
     : `<div class="empty">${ic("wrench")}<div>Nothing is at repair.</div></div>`;
-  const warList = warr.length ? `<ul class="list">${warr.map((w) => `<li><div class="ic ${w.daysLeft < 0 ? "red" : "amber"}">${ic("shield")}</div><div class="tx"><b>${esc(w.title || iName(w.itemId))}</b><span>${esc(w.hostelId ? hName(w.hostelId) : "All units")} · ${esc(w.warrantyNo || "No number")}</span></div><div class="rt">${daysBadge(w.daysLeft)}</div></li>`).join("")}</ul>`
-    : `<div class="empty">${ic("shield")}<div>No warranties expire in the next 90 days.</div></div>`;
-  const hostelBars = M.multi ? `<div class="card"><div class="ch"><h3>Stock by unit</h3><span class="sub">Current quantity</span></div><ul class="list">${byH.map((x) => `<li><div class="tx"><b class="lnk" data-act="invHostel" data-id="${x.h.id}">${esc(x.h.name)}</b><div style="height:8px;background:var(--line2);border-radius:99px;margin-top:7px;overflow:hidden"><div style="height:100%;width:${(x.n / maxH) * 100}%;background:linear-gradient(90deg,#5b7cfa,#2f54eb);border-radius:99px"></div></div></div><div class="rt strong" style="min-width:60px;font-weight:700">${nf(x.n)}</div></li>`).join("")}</ul></div>` : "";
+
+  // ---- charts (all scoped to this login's units and warehouses) ----
+  const txs = S.d.txns.filter((t) => inS(t.hostelId));
+  // 1. In vs Out, last 30 days (quantity per day)
+  const days = [...Array(30)].map((_, k) => addDays(today(), k - 29));
+  const inK = new Set(["in", "opening", "transfer_in", "repair_return"]), outK = new Set(["transfer_out", "repair_out", "damaged"]);
+  const perDay = (ks) => days.map((d) => txs.filter((t) => t.at === d && ks.has(t.kind)).reduce((a, t) => a + t.qty, 0));
+  const flow = colChart(days, [{ name: "In", color: "#0F8A66", vals: perDay(inK) }, { name: "Out", color: "#7C3AED", vals: perDay(outK) }]);
+  // 2. Out Register this month by type
+  const mIss = S.d.issues.filter((i) => i.at >= monthStart && !["cancelled", "rejected", "void"].includes(i.status) && (inS(i.hostelId) || inS(i.toHostelId)));
+  const typeParts = [["transfer", "Transfer", "#7C3AED"], ["repair", "Repair", "#D97706"], ["damage", "Damage", "#BE123C"]].map(([k, l, c]) => ({ label: l, color: c, value: mIss.filter((i) => i.kind === k).length, go: "issues" }));
+  // 3. Stock by unit / warehouse, 4. by category
+  const byUnit = S.d.hostels.filter((h) => inS(h.id)).map((h) => ({ label: h.name, value: rows.filter((r) => r.hostelId === h.id).reduce((a, r) => a + r.current, 0), act: `data-act="invHostel" data-id="${h.id}"` })).sort((a, b) => b.value - a.value);
+  const byCat = S.d.categories.map((c) => ({ label: c.name, value: rows.filter((r) => (M.I.get(r.itemId) || {}).categoryId === c.id).reduce((a, r) => a + r.current, 0) })).filter((x) => x.value > 0).sort((a, b) => b.value - a.value);
+  // 5. Warranties expiring per month, next 6 months
+  const months = [...Array(6)].map((_, k) => { const d = new Date(today() + "T00:00:00"); d.setDate(1); d.setMonth(d.getMonth() + k); return isoOf(d).slice(0, 7); });
+  const warMonths = months.map((m) => ({ label: new Date(m + "-01T00:00:00").toLocaleString("en-GB", { month: "short" }), value: M.warr.filter((w) => w.expiryAt && w.expiryAt.slice(0, 7) === m).length }));
+  const card = (title, sub, body, link) => `<div class="card dchart"><div class="ch"><h3>${esc(title)}</h3>${link ? `<a href="#${link}" class="sub">${esc(sub)}</a>` : `<span class="sub">${esc(sub)}</span>`}</div><div class="cb">${body}</div></div>`;
 
   return head("Dashboard", `${esc(scopeText())} · ${fmtD(today())}`)
     + stats([
@@ -350,9 +362,59 @@ V.home = () => {
       { v: nf(dmgMonth), l: "Damage This Month", tone: "red", go: "damaged" },
       { v: nf(M.exp30), l: "Warranties expiring in 30 days", tone: M.exp30 ? "red" : "green", go: "warranties" },
     ], true)
+    + `<div class="dgrid">`
+    + `<div class="dwide">${card("Stock In and Out", "Last 30 days · quantity", flow)}</div>`
+    + card("Out Register this month", "By type", donut(typeParts, "entries"), "issues")
+    + card(M.multi ? "Stock by unit" : "Current stock", "Quantity now", hbars(M.multi ? byUnit : [{ label: hName(M.scopeH[0]), value: total }], "#2F54EB"), "inventory")
+    + card("Stock by category", "Quantity now", hbars(byCat, "#0E7490"), "inventory")
+    + card("Warranties expiring", "Next 6 months", vbars(warMonths, "#C2410C", "warranties"), "warranties")
+    + `</div>`
     + `<div class="grid2"><div><div class="card"><div class="ch"><h3>Recent movements</h3><a href="#issues" class="sub">Out Register</a></div>${recentList}</div></div>`
-    + `<div>${hostelBars}<div class="card"><div class="ch"><h3>At repair</h3><a href="#repairs" class="sub">Track repairs</a></div>${repList}</div><div class="card"><div class="ch"><h3>Warranties expiring soon</h3><a href="#warranties" class="sub">All warranties</a></div>${warList}</div></div></div>`;
+    + `<div><div class="card"><div class="ch"><h3>At repair</h3><a href="#issues?repair" class="sub">Track repairs</a></div>${repList}</div></div></div>`;
 };
+
+/* ---------- small SVG / HTML charts for the Dashboard ---------- */
+// Grouped columns over days (one axis, quantity), with legend and hover tooltips.
+function colChart(days, series) {
+  // Drawn at phone width on phones, so the labels stay readable.
+  const narrow = innerWidth < 700;
+  const W = narrow ? 340 : 640, H = narrow ? 190 : 220, L = 30, B = 24, T = 10, R = 6;
+  const max = Math.max(1, ...series.flatMap((s) => s.vals));
+  const step = Math.pow(10, Math.floor(Math.log10(max))) * (max / Math.pow(10, Math.floor(Math.log10(max))) > 5 ? 2 : 1);
+  const top = Math.ceil(max / step) * step;
+  const y = (v) => T + (H - T - B) * (1 - v / top);
+  const gw = (W - L - R) / days.length, bw = Math.max(2, (gw - 4) / series.length - 1);
+  const ticks = [0, top / 2, top];
+  const grid = ticks.map((v) => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="cg"/><text x="${L - 6}" y="${y(v) + 4}" class="cl" text-anchor="end">${nf(Math.round(v))}</text>`).join("");
+  const bars = days.map((d, k) => series.map((s, n) => { const v = s.vals[k]; if (!v) return ""; const x = L + k * gw + 2 + n * (bw + 1), yy = y(v), h = H - B - yy;
+    return `<path d="M${x},${H - B}v${-(h - Math.min(3, h / 2))}q0,-${Math.min(3, h / 2)} ${Math.min(3, bw / 2)},-${Math.min(3, h / 2)}h${bw - 2 * Math.min(3, bw / 2)}q${Math.min(3, bw / 2)},0 ${Math.min(3, bw / 2)},${Math.min(3, h / 2)}v${h - Math.min(3, h / 2)}z" fill="${s.color}"><title>${fmtD(d)} · ${s.name}: ${nf(v)}</title></path>`; }).join("")).join("");
+  const hits = days.map((d, k) => `<rect x="${L + k * gw}" y="${T}" width="${gw}" height="${H - T - B}" fill="transparent"><title>${fmtD(d)}\n${series.map((s) => `${s.name}: ${nf(s.vals[k])}`).join("\n")}</title></rect>`).join("");
+  // Date labels counted back from today, so the last one is today; it is right-aligned so it is not cut off.
+  const xl = days.map((d, k) => ((days.length - 1 - k) % (narrow ? 7 : 5) === 0 ? `<text x="${k === days.length - 1 ? W - R : L + k * gw + gw / 2}" y="${H - 8}" class="cl" text-anchor="${k === days.length - 1 ? "end" : "middle"}">${d.slice(8, 10)}/${d.slice(5, 7)}</text>` : "")).join("");
+  const totals = series.map((s) => `<span class="lg"><i style="background:${s.color}"></i>${esc(s.name)} <b>${nf(s.vals.reduce((a, b) => a + b, 0))}</b></span>`).join("");
+  return `<div class="legend">${totals}</div><svg class="svgc" viewBox="0 0 ${W} ${H}" role="img" aria-label="Stock in and out per day, last 30 days">${grid}<line x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}" class="ca"/>${bars}${hits}${xl}</svg>`;
+}
+// Donut for a part-to-whole of up to 3–4 parts, every part labelled with its count.
+function donut(parts, unit) {
+  const tot = parts.reduce((a, p) => a + p.value, 0);
+  if (!tot) return `<div class="empty">${ic("send")}<div>No entries this month.</div></div>`;
+  const R = 70, C = 2 * Math.PI * R; let off = 0;
+  const arcs = parts.filter((p) => p.value).map((p) => { const len = (p.value / tot) * C; const a = `<circle r="${R}" cx="90" cy="90" fill="none" stroke="${p.color}" stroke-width="26" stroke-dasharray="${Math.max(0, len - 2)} ${C}" stroke-dashoffset="${-off}" transform="rotate(-90 90 90)"><title>${p.label}: ${nf(p.value)}</title></circle>`; off += len; return a; }).join("");
+  return `<div class="donut"><svg viewBox="0 0 180 180" role="img" aria-label="Out Register this month by type">${arcs}<text x="90" y="88" text-anchor="middle" class="dv">${nf(tot)}</text><text x="90" y="110" text-anchor="middle" class="cl">${esc(unit)}</text></svg>
+    <ul class="dleg">${parts.map((p) => `<li><i style="background:${p.color}"></i><span>${esc(p.label)}</span><b>${nf(p.value)}</b><small>${Math.round((p.value / tot) * 100)}%</small></li>`).join("")}</ul></div>`;
+}
+// Horizontal bars, largest first, value at the end; rows can open a page.
+function hbars(list, color) {
+  if (!list.length) return `<div class="empty">${ic("box")}<div>No stock yet.</div></div>`;
+  const max = Math.max(1, ...list.map((x) => x.value));
+  return `<ul class="hb">${list.slice(0, 8).map((x) => `<li title="${esc(x.label)}: ${nf(x.value)}"><span class="hl ${x.act ? "lnk" : ""}" ${x.act || ""}>${esc(x.label)}</span><span class="ht"><span class="hf" style="width:${Math.max(1.5, (x.value / max) * 100)}%;background:${color}"></span></span><b>${nf(x.value)}</b></li>`).join("")}</ul>`;
+}
+// Vertical bars for a few periods (e.g. months), value on top of each bar.
+function vbars(list, color, go) {
+  const max = Math.max(1, ...list.map((x) => x.value));
+  return `<div class="vb"${go ? ` data-go="${go}"` : ""}>${list.map((x) => `<div class="vc" title="${esc(x.label)}: ${nf(x.value)}"><b>${x.value ? nf(x.value) : ""}</b><span class="vt"><span class="vf" style="height:${x.value ? Math.max(4, (x.value / max) * 100) : 0}%;background:${color}"></span></span><small>${esc(x.label)}</small></div>`).join("")}</div>`;
+}
+
 function daysBadge(n) {
   if (n < 0) return `<span class="b red">Expired ${nf(-n)}d ago</span>`;
   if (n <= 30) return `<span class="b red">${n === 0 ? "Expires today" : nf(n) + " days left"}</span>`;
