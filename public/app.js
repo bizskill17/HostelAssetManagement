@@ -164,6 +164,8 @@ const isWh = (id) => (M.H.get(id) || {}).kind === "warehouse";
 const fName = (id) => (M.F.get(id) || {}).name || "—";
 // Item name of an issue, with the Serial No. of a warranty piece: "DG BIG(221)".
 const issueItem = (i) => iName(i.itemId) + (i.serialNo ? `(${i.serialNo})` : "");
+// Under the item name: a warranty piece whose entry has no Serial No. yet (made before pieces were chosen by Serial No.).
+const snHint = (i) => (i.serialNo || !itemHasWarranty(i.itemId) ? "" : M.admin ? `<div class="sn"><span class="lnk" data-act="setsn" data-id="${i.id}">Set Serial No.</span></div>` : `<div class="sn dim">Serial No. not set</div>`);
 // Serial Nos. of a warranty item at a unit / warehouse that are free to issue (not in an open entry, not written off).
 const freeSerials = (hid, iid) => {
   const busy = new Set(S.d.issues.filter((i) => i.itemId === iid && i.serialNo && (i.status === "pending" || (i.kind === "repair" && (i.status === "at_repair" || i.status === "partly_returned")) || (i.kind === "damage" && i.status === "done"))).map((i) => i.serialNo));
@@ -276,7 +278,7 @@ function issueCard(i, extra = []) {
   const recv = i.kind === "transfer" && i.receivedQty != null ? [["Received", recvHtml(i)]] : [];
   return {
     tone: ISSUE_KIND[i.kind].c,
-    title: `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>`,
+    title: `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>${snHint(i)}`,
     qty: `${nf(i.qty)} <small>${esc(iUnit(i.itemId))}</small>`,
     sub: `${esc(hName(i.hostelId))}${to ? " → " + esc(to) : ""}${i.kind === "repair" && i.repairType === "Internal" ? " (internal)" : ""}`,
     meta: `<span class="mono">${esc(i.no)}</span> · ${fmtD(i.at)} · ${esc(uName(i.createdBy))}`,
@@ -556,7 +558,7 @@ function issueCols(withActs = true) {
     { h: "Type", t: (i) => ISSUE_KIND[i.kind].l, html: (i) => badge(ISSUE_KIND[i.kind]) },
     { h: "Repair type", t: (i) => (i.kind === "repair" ? i.repairType || "External" : ""), html: (i) => (i.kind === "repair" ? `<span class="b ${i.repairType === "Internal" ? "cyan" : "violet"}">${esc(i.repairType || "External")}</span>` : `<span class="dim">—</span>`) },
     { h: "From", t: (i) => hName(i.hostelId), cls: "nw" },
-    { h: "Item", t: (i) => issueItem(i), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>` },
+    { h: "Item", t: (i) => issueItem(i), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>${snHint(i)}` },
     { h: "Qty", t: (i) => i.qty, num: 1, html: (i) => `<b>${nf(i.qty)}</b> <span class="dim">${esc(iUnit(i.itemId))}</span>` },
     { h: "Received", t: (i) => (i.kind === "transfer" && i.receivedQty != null ? i.receivedQty : ""), num: 1, html: recvHtml },
     { h: "To / sent to", t: (i) => (i.kind === "transfer" ? hName(i.toHostelId) : i.place || ""), cls: "nw" },
@@ -640,7 +642,7 @@ function approvalsView(key) {
     { h: "Sent on", t: (i) => i.at, html: (i) => fmtD(i.at), cls: "nw" },
     { h: "From", t: (i) => hName(i.hostelId), cls: "nw" },
     { h: "To", t: (i) => hName(i.toHostelId), cls: "nw" },
-    { h: "Item", t: (i) => issueItem(i), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.toHostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>` },
+    { h: "Item", t: (i) => issueItem(i), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.toHostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>${snHint(i)}` },
     { h: "UoM", t: (i) => iUnit(i.itemId), cls: "dim" },
     { h: "Send qty", t: (i) => i.qty, num: 1, html: (i) => `<b>${nf(i.qty)}</b>` },
     { h: "Received qty", t: (i) => i.receivedQty ?? "", num: 1, html: recvHtml },
@@ -673,7 +675,7 @@ V.damage = () => {
     { h: "No.", t: (i) => i.no, html: (i) => `<span class="mono">${esc(i.no)}</span>`, cls: "nw" },
     { h: "Date", t: (i) => i.at, html: (i) => fmtD(i.at), cls: "nw" },
     { h: "Unit", t: (i) => hName(i.hostelId), cls: "nw" },
-    { h: "Item", t: (i) => issueItem(i), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>` },
+    { h: "Item", t: (i) => issueItem(i), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>${snHint(i)}` },
     { h: "UoM", t: (i) => iUnit(i.itemId), cls: "dim" },
     { h: "Reported qty", t: (i) => i.qty, num: 1, html: (i) => `<b>${nf(i.qty)}</b>` },
     { h: "Approved qty", t: (i) => i.receivedQty ?? "", num: 1, html: (i) => (i.receivedQty == null ? `<span class="dim">—</span>` : i.receivedQty < i.qty ? `<span class="qout">${nf(i.receivedQty)}</span>` : nf(i.receivedQty)) },
@@ -729,7 +731,7 @@ function repairsView(key, pendingOnly) {
     { h: "No.", t: (i) => i.no, html: (i) => `<span class="mono">${esc(i.no)}</span>`, cls: "nw" },
     { h: "Sent on", t: (i) => i.at, html: (i) => fmtD(i.at), cls: "nw" },
     { h: "Unit", t: (i) => hName(i.hostelId), cls: "nw" },
-    { h: "Item", t: (i) => issueItem(i), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>` },
+    { h: "Item", t: (i) => issueItem(i), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>${snHint(i)}` },
     { h: "Repair type", t: (i) => i.repairType || "External", html: (i) => `<span class="b ${i.repairType === "Internal" ? "cyan" : "violet"}">${esc(i.repairType || "External")}</span>` },
     { h: "Repairer", t: (i) => i.place || "", cls: "nw" },
     { h: "Sent", t: (i) => i.qty, num: 1 },
