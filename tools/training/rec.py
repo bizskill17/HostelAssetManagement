@@ -55,7 +55,8 @@ def tts(text, path):
 EXPORTED = []
 
 
-def record(name, title, steps, setup=None):
+def record(name, title, steps, setup=None, login=False):
+    """login=True only for the Sign In video; every other video starts already signed in, on the Dashboard."""
     if os.environ.get("EXPORT"):
         EXPORTED.append((name, title, [dict(s) for s in steps]))
         return 0
@@ -64,22 +65,29 @@ def record(name, title, steps, setup=None):
     for f in os.listdir(work):
         os.remove(os.path.join(work, f))
     email, pw = LOGIN.get(name, ("admin@example.com", "admin1234"))
-    steps = steps[:1] + [{"say": "Open the app and sign in with your email and password.", "cap": "Sign in with your Email and Password",
-                          "do": [("type", "input[name=email]", email), ("type", "input[name=password]", pw), ("click", "form button[type=submit]"), ("wait", 900)]}] + steps[1:]
     # Voice for every step first, so the recording can wait for each line to finish.
     for k, s in enumerate(steps):
         s["wav"] = f"{work}/s{k}.wav"
         s["dur"] = tts(s["say"], s["wav"])
     with sync_playwright() as p:
         b = p.chromium.launch()
-        # Every video starts on the login page, signed out.
-        ctx = b.new_context(viewport={"width": VW, "height": VH}, record_video_dir=work, record_video_size={"width": VW, "height": VH})
+        state = None
+        if not login:
+            lc = b.new_context(viewport={"width": VW, "height": VH})
+            lp = lc.new_page(); lp.goto(BASE); lp.wait_for_timeout(800)
+            lp.fill("input[name=email]", email); lp.fill("input[name=password]", pw); lp.keyboard.press("Enter"); lp.wait_for_timeout(1500)
+            state = lc.storage_state(); lc.close()
+        ctx = b.new_context(viewport={"width": VW, "height": VH}, storage_state=state, record_video_dir=work, record_video_size={"width": VW, "height": VH})
         pg = ctx.new_page()
-        t0 = time.monotonic()
-        pg.goto(BASE); pg.wait_for_timeout(1200)
+        tv = time.monotonic()  # the recording starts with the page
+        pg.goto(BASE + ("" if login else "#home")); pg.wait_for_timeout(1500)
+        # The clock starts once the page is showing, and the blank frames before it are cut off below.
+        lead = None
         pg.evaluate(OVERLAY)
         if setup:
             setup(pg)
+        t0 = time.monotonic()
+        lead = t0 - tv
 
         def overlay():
             pg.evaluate(OVERLAY)
@@ -156,7 +164,7 @@ def record(name, title, steps, setup=None):
         filt.append(f"[{k + 1}:a]adelay={int(m * 1000)}|{int(m * 1000)},aresample=48000[a{k}]")
     mix = "".join(f"[a{k}]" for k in range(len(steps))) + f"amix=inputs={len(steps)}:normalize=0,volume=1.6[aout]"
     tmp = f"{OUT}/{name}.part.mp4"
-    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", vid, *inputs, "-filter_complex", ";".join(filt) + ";" + mix,
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{lead:.3f}", "-i", vid, *inputs, "-filter_complex", ";".join(filt) + ";" + mix,
                     "-map", "0:v", "-map", "[aout]", "-vf", f"scale={W}:{H}:flags=lanczos", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
                     "-r", "30", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", tmp], check=True)
     os.replace(tmp, f"{OUT}/{name}.mp4")

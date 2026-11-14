@@ -11,6 +11,7 @@ for k in v_flows.ORDER:
     rec.record(n, st[0]["cap"], st)
 OUT = "/home/claude/training-build/out"
 META = {  # name: (group, roles or None for everyone, page to open)
+    "sign-in": ("Getting Started", None, "home"),
     "getting-started": ("Getting Started", None, "home"),
     "masters-foundation": ("Masters", ["Admin"], "foundations"), "masters-unit": ("Masters", ["Admin"], "hostels"),
     "masters-category": ("Masters", ["Admin"], "categories"), "masters-measuring-unit": ("Masters", ["Admin"], "units"),
@@ -31,7 +32,7 @@ for name, title, steps in sorted(rec.EXPORTED, key=lambda x: order.index(x[0])):
     dur = float(subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", f]))
     g, roles, page = META[name]
     guides.append({"id": name, "group": g, "title": title, "roles": roles, "video": f"{name}.mp4", "dur": round(dur, 1), "open": page,
-                   "intro": steps[0]["say"], "steps": ["Sign in with your Email and Password"] + [s["cap"] for s in steps[1:]]})
+                   "intro": steps[0]["say"], "steps": [s["cap"] for s in steps[1:]]})
 dst = "/home/claude/hostelassetmanagement/public/training"
 os.makedirs(dst, exist_ok=True)
 json.dump(guides, open(f"{dst}/guides.json", "w"), indent=1, ensure_ascii=False)

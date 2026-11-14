@@ -41,14 +41,23 @@ def ensure_stock():
 
 V = {}
 
+V["signin"] = ("sign-in", lambda: None, [
+    {"say": "Welcome to Hostel Asset Management. This video shows how to sign in and sign out.", "cap": "Sign In and Sign Out", "num": False},
+    {"say": "Open the app. Type the email address your Admin gave you.", "cap": "Type your Email", "do": [("type", "input[name=email]", "admin@example.com")]},
+    {"say": "Type your password. Click the eye icon if you want to check what you typed.", "cap": "Type your Password", "do": [("type", "input[name=password]", "admin1234"), ("hl", "form .eye")]},
+    {"say": "Click Sign In.", "cap": "Click Sign In", "do": [("click", "form button[type=submit]"), ("wait", 1000)]},
+    {"say": "You are now on the Dashboard. Your name and role are shown at the bottom of the menu.", "cap": "You are on the Dashboard", "do": [("hl", "#meBox")]},
+    {"say": "When you are done, click the sign out button next to your name.", "cap": "Sign out: button next to your name", "do": [("hl", "#meBox [data-act=logout]")]},
+])
+
 V["start"] = ("getting-started", lambda: None, [
-    {"say": "Welcome to Hostel Asset Management. This short video shows how to sign in and find your way around.", "cap": "Getting Started", "num": False},
+    {"say": "This short video shows how to find your way around the app.", "cap": "Find Your Way Around", "num": False},
     {"say": "The left menu has four parts. Overview has the Dashboard and Inventory.", "cap": "Overview: Dashboard and Inventory", "do": [("hl", "#nav .sec")]},
     {"say": "Operations has the In Register for stock coming in, and the Out Register for transfers, repairs and damage.", "cap": "Operations: In Register and Out Register", "do": [("hl", "#nav a[href='#stock']"), ("hl", "#nav a[href='#issues']")]},
     {"say": "Records has Warranties.", "cap": "Records: Warranties", "do": [("hl", "#nav a[href='#warranties']")]},
     {"say": "Masters and Settings are for the Admin, to set up foundations, units, items and users.", "cap": "Masters and Settings (Admin)", "do": [("hl", "#nav a[href='#foundations']")]},
     {"say": "The Dashboard shows what needs attention. Click any tile to open that list.", "cap": "Dashboard tiles open the list", "do": [("click", "#nav a[href='#home']"), ("hl", "#view .stats.dash")]},
-    {"say": "When you are done, click the sign out button at the bottom of the menu.", "cap": "Sign out at the bottom of the menu", "do": [("hl", "#meBox [data-act=logout]")]},
+    {"say": "On a phone, the bar at the bottom has Home, Inventory, Issue, Approvals and More.", "cap": "On a phone: the bottom bar", "do": [("wait", 300)]},
 ])
 
 V["purchase"] = ("in-purchase", lambda: None, [
@@ -200,7 +209,7 @@ V["settings"] = ("settings-telegram", None, [
     {"say": "Click Save Settings, then Send a Test to check the group receives it.", "cap": "Save Settings, then Send a Test", "do": [("hl", "#setForm button[type=submit]"), ("hl", "#setForm [data-act=testNotify]")]},
 ])
 
-ORDER = ["start", "purchase", "opening", "warranty_in", "bulk", "transfer", "warranty_out", "repair", "damage", "receive", "dmg_approve", "repair_return", "cancel", "inventory", "warranties", "settings"]
+ORDER = ["signin", "start", "purchase", "opening", "warranty_in", "bulk", "transfer", "warranty_out", "repair", "damage", "receive", "dmg_approve", "repair_return", "cancel", "inventory", "warranties", "settings"]
 
 if __name__ == "__main__":
     if not os.environ.get("EXPORT"):
@@ -209,4 +218,4 @@ if __name__ == "__main__":
         name, setup, steps = V[k]
         if setup and not os.environ.get("EXPORT"):
             setup()
-        record(name, steps[0]["cap"], steps)
+        record(name, steps[0]["cap"], steps, login=(k == "signin"))
