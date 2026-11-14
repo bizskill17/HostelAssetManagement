@@ -260,6 +260,9 @@ function stockAdd(array $u, array $b, bool $checkOnly = false, bool $notify = tr
     }
     $warr = itemWarranty($iid);
     $expiry = dateOr($b['warrantyExpiry'] ?? '', null);
+    if ($warr && str($b['warrantyNo'] ?? '', 80) === '') {
+        return "{$item['name']} has a warranty: enter the Serial No.";
+    }
     if ($warr && !$expiry) {
         return "{$item['name']} has a warranty: enter the warranty expiry date.";
     }

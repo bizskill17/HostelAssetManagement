@@ -1171,7 +1171,7 @@ function stockForm() {
       { k: "qty", l: "Quantity", type: "number", req: 1, half: 1 },
       { k: "at", l: (v) => (v.kind === "opening" ? "As of date" : "Purchase date"), type: "date", req: 1, val: today(), half: 1 },
       { k: "party", l: "Supplier", half: 1, ph: "e.g. Sharma Furniture", show: (v) => v.kind === "in" || itemHasWarranty(+v.itemId) },
-      { k: "warrantyNo", l: "Warranty / serial no.", half: 1, show: (v) => itemHasWarranty(+v.itemId) },
+      { k: "warrantyNo", l: "Serial No.", req: 1, half: 1, show: (v) => itemHasWarranty(+v.itemId) },
       { k: "warrantyStart", l: "Warranty from", type: "date", half: 1, show: (v) => itemHasWarranty(+v.itemId) },
       { k: "warrantyExpiry", l: "Warranty expiry", type: "date", req: 1, half: 1, show: (v) => itemHasWarranty(+v.itemId) },
       { k: "notes", l: "Notes", type: "textarea", req: (v) => v.kind === "in", ph: (v) => (v.kind === "in" ? "Bill number, where it came from…" : "Remarks") },
@@ -1186,7 +1186,7 @@ function groupedItems(items) {
 
 /* ---------- opening stock bulk upload ---------- */
 const BULK_COLS = [["location", "Unit / warehouse"], ["item", "Item"], ["qty", "Qty"], ["date", "Date (dd/mm/yyyy)"], ["supplier", "Supplier"],
-  ["warrantyNo", "Warranty / serial no."], ["warrantyStart", "Warranty from (dd/mm/yyyy)"], ["warrantyExpiry", "Warranty expiry (dd/mm/yyyy)"], ["notes", "Notes"]];
+  ["warrantyNo", "Serial No."], ["warrantyStart", "Warranty from (dd/mm/yyyy)"], ["warrantyExpiry", "Warranty expiry (dd/mm/yyyy)"], ["notes", "Notes"]];
 const csvCell = (v) => { const t = String(v ?? ""); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
 function parseCSV(text) {
   const rows = []; let row = [], cell = "", q = false;
@@ -1214,7 +1214,7 @@ function bulkForm() {
   w.innerHTML = `<form novalidate><div class="dh"><div><h2>Opening stock bulk upload</h2><p>Load opening stock for many items at once from a spreadsheet.</p></div><button type="button" class="iconbtn" data-close aria-label="Close">${ic("x")}</button></div>
     <div class="db">
       <div class="fld"><label>1. Download the template</label><div><button type="button" class="btn" id="bkTpl">${ic("download")}Download template</button></div>
-        <div class="help">Open it in Excel or Google Sheets. One row per unit and item. Unit and item names must match the app exactly. Warranty items need the warranty expiry date. Save it as CSV.</div></div>
+        <div class="help">Open it in Excel or Google Sheets. One row per unit and item. Unit and item names must match the app exactly. Warranty items need the Serial No. and warranty expiry date. Save it as CSV.</div></div>
       <div class="fld"><label for="bkFile">2. Upload the filled file (.csv)</label><input type="file" id="bkFile" accept=".csv,text/csv"></div>
       <div id="bkOut" class="fld"></div>
     </div>
