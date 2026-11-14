@@ -1218,14 +1218,22 @@ try {
         }
 
         case 'clear': {
-            // Deletes all stock, issues and warranties (masters and users are kept). Deploy workflow only.
+            // Deletes all stock, issues and warranties (masters and users kept); with all=1 also the masters. Deploy workflow only.
             $key = (string) ($_GET['key'] ?? '');
             if ($key === '' || !hash_equals(hash_hmac('sha256', 'hostel-assets-clear', DB_PASS), $key)) {
                 fail('Not allowed.', 403, 'forbidden');
             }
             $done = [];
-            foreach (['ha_txns', 'ha_issues', 'ha_warranties'] as $t) {
-                $done[$t] = db()->exec("DELETE FROM $t");
+            // all=1: everything except user logins and settings (masters too); numbering starts again from 1.
+            $all = !empty($_GET['all']);
+            $tables = $all ? ['ha_txns', 'ha_issues', 'ha_warranties', 'ha_hostels', 'ha_foundations', 'ha_items', 'ha_categories', 'ha_units', 'ha_damage_places'] : ['ha_txns', 'ha_issues', 'ha_warranties'];
+            foreach ($tables as $t) {
+                $done[$t] = (int) db()->query("SELECT COUNT(*) FROM $t")->fetchColumn();
+                db()->exec($all ? "TRUNCATE TABLE $t" : "DELETE FROM $t");
+            }
+            if ($all) {
+                // Users stay, but their unit / Foundation no longer exists.
+                $done['users_unlinked'] = db()->exec("UPDATE ha_users SET hostel_id = NULL, foundation_id = NULL WHERE hostel_id IS NOT NULL OR foundation_id IS NOT NULL");
             }
             out(['deleted' => $done]);
         }

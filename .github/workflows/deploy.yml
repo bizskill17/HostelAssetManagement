@@ -13,6 +13,10 @@ on:
         description: "DELETE all stock entries, issues and warranties (hostels, items and users are kept)"
         type: boolean
         default: false
+      clear_all:
+        description: "DELETE everything except users and settings (foundations, units, items, categories… too)"
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-hostinger
@@ -141,3 +145,14 @@ jobs:
         run: |
           KEY=$(python3 -c "import hmac,hashlib,os;print(hmac.new(os.environ['DB_PASS'].encode(),b'hostel-assets-clear',hashlib.sha256).hexdigest())")
           curl -fsS --max-time 60 "$SITE_URL/api/index.php?a=clear&key=$KEY"; echo
+
+      # Permanently deletes everything except user logins and settings. Runs only when started manually with
+      # "DELETE everything…" ticked, or for a pushed commit whose message contains [clear-all].
+      - name: Clear all data except users
+        if: env.FTP_SERVER != '' && (inputs.clear_all || contains(github.event.head_commit.message, '[clear-all]'))
+        env:
+          DB_PASS: ${{ secrets.DB_PASS }}
+          SITE_URL: ${{ vars.SITE_URL || 'https://hostelassettracker.bizskilledu.com' }}
+        run: |
+          KEY=$(python3 -c "import hmac,hashlib,os;print(hmac.new(os.environ['DB_PASS'].encode(),b'hostel-assets-clear',hashlib.sha256).hexdigest())")
+          curl -fsS --max-time 60 "$SITE_URL/api/index.php?a=clear&all=1&key=$KEY"; echo
