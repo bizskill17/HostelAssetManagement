@@ -18,6 +18,7 @@ const TG_EVENTS = [
     'damage_decided' => 'Damage approved / rejected',
     'repair_sent' => 'Repair sent',
     'repair_returned' => 'Repair returned',
+    'count_saved' => 'Physical count saved',
     'daily_overdue' => 'Daily: repairs overdue',
     'daily_warranty' => 'Daily: warranties expiring',
     'daily_summary' => 'Daily: morning summary',
@@ -326,6 +327,27 @@ function sendTelegram(array $s, string $html, ?string $chat = null): array
         return ['ok' => false, 'message' => $msg];
     }
     return ['ok' => true];
+}
+
+/** A physical count was saved: how many lines, and each difference. */
+function notifyCount(int $hid, int $batch, string $at, int $lines, array $diffs, array $u): void
+{
+    try {
+        $s = settings();
+        if (!tgReady($s) || !tgEventOn($s, 'count_saved')) {
+            return;
+        }
+        $no = 'PC-' . str_pad((string) $batch, 5, '0', STR_PAD_LEFT);
+        $L = ["📋 <b>Physical count $no</b>", h(hostelRow($hid)['name'] ?? '') . ' · ' . dmy($at), "$lines item" . ($lines === 1 ? '' : 's') . ' counted · ' . (count($diffs) ? count($diffs) . ' with a difference (waiting for approval)' : 'all match')];
+        foreach (array_slice($diffs, 0, 15) as [$iid, $book, $phys]) {
+            $d = $phys - $book;
+            $L[] = '• ' . h(itemRow($iid)['name'] ?? '') . ": system $book · counted $phys · " . ($d > 0 ? "+$d" : (string) $d);
+        }
+        $L[] = 'By: ' . h($u['name']);
+        tgPost($s, 'count_saved', [$hid], implode("\n", $L) . tgFooter($s));
+    } catch (Throwable $e) {
+        error_log('[hostel-assets] notify failed: ' . $e->getMessage());
+    }
 }
 
 /** Posts a test message to the main group and to every Foundation and unit group, and reports each result. */

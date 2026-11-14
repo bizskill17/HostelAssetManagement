@@ -100,8 +100,9 @@ const addDays = (iso, n) => { const d = new Date(iso + "T00:00:00"); d.setDate(d
 const KIND = {
   opening: { l: "Opening stock", c: "blue" }, in: { l: "Purchase", c: "green" }, transfer_in: { l: "Transfer in", c: "cyan" },
   transfer_out: { l: "Transfer out", c: "violet" }, repair_out: { l: "Sent for repair", c: "amber" },
-  repair_return: { l: "Back from repair", c: "green" }, damaged: { l: "Damaged", c: "red" },
+  repair_return: { l: "Back from repair", c: "green" }, damaged: { l: "Damaged", c: "red" }, adjust: { l: "Physical adjustment", c: "slate" },
 };
+const COUNT_ST = { ok: { l: "Matched", c: "green" }, pending: { l: "Awaiting approval", c: "amber" }, approved: { l: "Adjusted", c: "blue" }, rejected: { l: "Rejected", c: "red" } };
 const ISSUE_KIND = { transfer: { l: "Transfer", c: "violet" }, repair: { l: "Repair", c: "amber" }, damage: { l: "Damage", c: "red" } };
 const STATUS = {
   pending: { l: "Awaiting receipt", c: "amber" }, received: { l: "Received", c: "green" }, short: { l: "Received short", c: "amber" }, rejected: { l: "Not received", c: "red" }, approved: { l: "Received", c: "green" },
@@ -160,7 +161,19 @@ function derive() {
   M.openRepairs = d.issues.filter((i) => i.kind === "repair" && (i.status === "at_repair" || i.status === "partly_returned"));
   M.warr = d.warranties.map((w) => ({ ...w, daysLeft: daysBetween(today(), w.expiryAt) }));
   M.exp30 = M.warr.filter((w) => w.daysLeft >= 0 && w.daysLeft <= 30).length;
+  // Latest physical count per unit × item (rejected lines don't count), and differences waiting for approval.
+  d.counts = d.counts || [];
+  M.lastCount = new Map();
+  for (const c of d.counts) {
+    if (c.status === "rejected") continue;
+    const k = c.hostelId + "|" + c.itemId, o = M.lastCount.get(k);
+    if (!o || c.at > o.at || (c.at === o.at && c.id > o.id)) M.lastCount.set(k, c);
+  }
+  M.cntPending = d.counts.filter((c) => c.status === "pending" && canApprove(c.hostelId)).length;
 }
+// System qty of an item at a location at the end of a date.
+const bookOn = (hid, iid, at) => S.d.txns.reduce((s, t) => (t.hostelId === hid && t.itemId === iid && t.at <= at ? s + t.dir * t.qty : s), 0);
+const diffHtml = (d) => (d > 0 ? `<span class="qin">+${nf(d)}</span>` : d < 0 ? `<span class="qout">−${nf(-d)}</span>` : `<span class="dim">0</span>`);
 const hName = (id) => (M.H.get(id) || {}).name || "—";
 const inS = (id) => M.scopeSet.has(id);
 // Damage is approved by Admin, Organization, or the Foundation the unit / warehouse belongs to.
@@ -440,6 +453,8 @@ V.inventory = () => {
   rows = rows.filter((r) => match(f.q, iName(r.itemId), iCat(r.itemId), r.hostelId ? hName(r.hostelId) : ""))
     .filter((r) => !f.c || (M.I.get(r.itemId) || {}).categoryId === +f.c)
     .filter((r) => !f.stock || (f.stock === "in" ? r.current > 0 : f.stock === "zero" ? r.current <= 0 : r.atRepair > 0 || r.pendingOut > 0 || r.pendingIn > 0))
+    .map((r) => ({ ...r, pc: invCount(r) }))
+    .filter((r) => !f.pc || (f.pc === "diff" ? r.pc && r.pc.diff !== 0 : f.pc === "match" ? r.pc && r.pc.diff === 0 : !r.pc))
     .sort((a, b) => cmp(a.hostelId ? hName(a.hostelId) : "", b.hostelId ? hName(b.hostelId) : "") || cmp(iName(a.itemId), iName(b.itemId)));
   const sum = (k) => rows.reduce((s, r) => s + r[k], 0);
   const cols = [
@@ -455,6 +470,9 @@ V.inventory = () => {
     { h: "At repair", t: (r) => r.atRepair, num: 1, cls: "dim", foot: () => nf(sum("atRepair")) },
     { h: "Damage pending", t: (r) => r.pendingDmg || "", num: 1, cls: "dim" },
     { h: "Transfer pending", t: (r) => (r.pendingOut ? `−${r.pendingOut}` : "") + (r.pendingOut && r.pendingIn ? " / " : "") + (r.pendingIn ? `+${r.pendingIn}` : ""), cls: "dim nw", nosort: 1 },
+    { h: "Physical Date", t: (r) => (r.pc ? r.pc.at : ""), html: (r) => (r.pc ? fmtD(r.pc.at) : `<span class="dim">—</span>`), cls: "nw" },
+    { h: "Physical Qty", t: (r) => (r.pc ? r.pc.physicalQty : ""), num: 1, html: (r) => (r.pc ? `<b>${nf(r.pc.physicalQty)}</b>` : `<span class="dim">—</span>`) },
+    { h: "Difference", t: (r) => (r.pc ? r.pc.diff : ""), num: 1, html: (r) => (r.pc ? diffHtml(r.pc.diff) + (r.pc.status === "pending" ? ` <span class="b amber" title="Waiting for approval">Pending</span>` : "") : `<span class="dim">—</span>`) },
   ];
   return head("Inventory", `${esc(combine ? "All units combined" : scopeText())} · click an item to see its history`, `${csvBtn("inventory")}<button class="btn pri" data-act="issue">${ic("plus")}<span class="l">Issue Asset</span></button>`)
     + stats([
@@ -470,10 +488,160 @@ V.inventory = () => {
       { k: "h", l: "Unit", opts: hostelOpts(), all: "All units", hide: !M.multi },
       { k: "c", l: "Category", opts: catOpts(), all: "All categories" },
       { k: "stock", l: "Stock", opts: [["in", "In stock"], ["zero", "Zero stock"], ["moving", "At repair / transfer pending"]], all: "Any stock" },
+      { k: "pc", l: "Physical count", opts: [["diff", "With difference"], ["match", "Matched"], ["none", "Not counted"]], all: "Any count" },
       { k: "view", l: "View", opts: [["all", "All units combined"]], all: "By unit", hide: !M.multi },
     ])
     + table("inventory", cols, rows, { nocards: 1, csv: "inventory", foot: 1, empty: "No stock yet. Add opening stock to get started." });
 };
+
+// Latest count for an inventory row; combined across units it sums the latest count of each unit.
+function invCount(r) {
+  if (r.hostelId) return M.lastCount.get(r.hostelId + "|" + r.itemId) || null;
+  const list = M.scopeH.map((h) => M.lastCount.get(h + "|" + r.itemId)).filter(Boolean);
+  if (!list.length) return null;
+  return { at: list.reduce((m, c) => (c.at > m ? c.at : m), ""), physicalQty: list.reduce((s, c) => s + c.physicalQty, 0), diff: list.reduce((s, c) => s + c.diff, 0), status: list.some((c) => c.status === "pending") ? "pending" : "ok" };
+}
+
+/* ---------- physical stock ---------- */
+V.physical = () => {
+  const f = fv("physical");
+  const rows = S.d.counts.filter((c) => M.scopeH.includes(c.hostelId))
+    .filter((c) => (!f.h || c.hostelId === +f.h) && (!f.st || (f.st === "diff" ? c.diff !== 0 : c.status === f.st)) && inRange(c.at, f))
+    .filter((c) => match(f.q, iName(c.itemId), c.no, c.note, hName(c.hostelId), c.decisionNote));
+  const acts = (c) => (c.status === "pending" && canApprove(c.hostelId) ? ab("cntok", c.id, "tick", "Approve and adjust stock", "green") + ab("cntno", c.id, "x", "Reject", "red") : "");
+  const cols = [
+    { h: "Date", t: (c) => c.at, html: (c) => fmtD(c.at), cls: "nw" },
+    { h: "No.", t: (c) => c.no, cls: "mono nw" },
+    { h: "Unit", t: (c) => hName(c.hostelId), cls: "nw" },
+    { h: "Item", t: (c) => iName(c.itemId), html: (c) => `<span class="lnk" data-act="ledger" data-h="${c.hostelId}" data-i="${c.itemId}">${esc(iName(c.itemId))}</span>` },
+    { h: "UoM", t: (c) => iUnit(c.itemId), cls: "dim" },
+    { h: "System Qty", t: (c) => c.bookQty, num: 1 },
+    { h: "Physical Qty", t: (c) => c.physicalQty, num: 1, cls: "strong", html: (c) => `<b>${nf(c.physicalQty)}</b>` },
+    { h: "Difference", t: (c) => c.diff, num: 1, html: (c) => diffHtml(c.diff) },
+    { h: "Status", t: (c) => COUNT_ST[c.status].l, html: (c) => badge(COUNT_ST[c.status]) },
+    { h: "Notes", t: (c) => [c.note, c.decisionNote && "Note: " + c.decisionNote].filter(Boolean).join(" · "), cls: "wrap" },
+    { h: "Counted by", t: (c) => uName(c.createdBy), cls: "dim nw" },
+    { h: "", t: () => "", nocsv: 1, nosort: 1, html: (c) => `<div class="rowacts">${acts(c)}</div>` },
+  ];
+  const n = (fn) => rows.filter(fn).length;
+  return head("Physical Stock", "", `${csvBtn("physical")}<button class="btn pri" data-act="countin">${ic("plus")}<span class="l">Add Physical Count</span></button>`)
+    + stats([
+      { v: nf(rows.length), l: "Lines counted" },
+      { v: nf(n((c) => c.diff === 0)), l: "Matched", tone: "green" },
+      { v: nf(n((c) => c.status === "pending")), l: "Awaiting approval", tone: "amber" },
+      { v: nf(n((c) => c.status === "approved")), l: "Adjusted", tone: "blue" },
+    ])
+    + filterBar("physical", [
+      { k: "q", type: "search", ph: "Search item, count no. or notes" },
+      { k: "h", l: "Unit", opts: hostelOpts(), all: "All units", hide: !M.multi },
+      { k: "st", l: "Status", opts: [["diff", "With difference"], ...Object.entries(COUNT_ST).map(([k, o]) => [k, o.l])], all: "All statuses" },
+      { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
+    ])
+    + table("physical", cols, rows, {
+      csv: "physical-stock", empty: "No physical counts yet. Add a count to compare the shelf with the system.",
+      card: (c) => ({ tone: c.diff === 0 ? "green" : c.status === "pending" ? "amber" : c.status === "rejected" ? "red" : "blue",
+        title: `<span class="lnk" data-act="ledger" data-h="${c.hostelId}" data-i="${c.itemId}">${esc(iName(c.itemId))}</span>`,
+        qty: `${nf(c.physicalQty)} <small>${esc(iUnit(c.itemId))}</small>`, sub: esc(hName(c.hostelId)), status: badge(COUNT_ST[c.status]),
+        meta: `<span class="mono">${esc(c.no)}</span> · ${fmtD(c.at)} · ${esc(uName(c.createdBy))}`, right: `System ${nf(c.bookQty)} · ${diffHtml(c.diff)}`,
+        extra: [["Notes", esc([c.note, c.decisionNote && "Note: " + c.decisionNote].filter(Boolean).join(" · "))]] }),
+    });
+};
+// Count form: pick the location and date, then enter the physical qty for each item. Blank lines are skipped.
+function countForm() {
+  closeDlg();
+  const locs = locOpts(M.scopeH);
+  const st = { h: M.multi ? "" : String(M.scopeH[0]), at: today(), all: false, q: "", v: {}, n: {} };
+  const w = document.createElement("div");
+  w.className = "dlg";
+  w.innerHTML = `<form novalidate class="box wide"><div class="dh"><div><h2>Add Physical Count</h2></div><button type="button" class="iconbtn" data-close aria-label="Close">${ic("x")}</button></div>
+    <div class="db">
+      <div class="fld half"><label>Unit / Warehouse <span class="req">*</span></label><select id="pcH"><option value="">Choose…</option>${locs.map(([id, n]) => `<option value="${id}"${String(id) === st.h ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></div>
+      <div class="fld half"><label>Count Date <span class="req">*</span></label><input type="date" id="pcAt" value="${st.at}" max="${today()}"></div>
+      <div class="pcbar"><div class="search">${ic("search")}<input class="inp" id="pcQ" placeholder="Search item" autocomplete="off"></div><label class="chk"><input type="checkbox" id="pcAll"> Show all items</label><span id="pcSum" class="dim"></span></div>
+      <div id="pcList"></div><div class="err" id="pcErr"></div>
+    </div>
+    <div class="df"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn pri" id="pcGo">Save Count</button></div></form>`;
+  document.body.appendChild(w);
+  enhanceAll(w);
+  const list = $("#pcList", w), err = $("#pcErr", w), sum = $("#pcSum", w);
+  const lines = () => {
+    if (!st.h) return [];
+    const hid = +st.h;
+    const used = new Set(S.d.txns.filter((t) => t.hostelId === hid).map((t) => t.itemId));
+    return S.d.items.filter((i) => (st.all || used.has(i.id)) && match(st.q, i.name, iCat(i.id)))
+      .map((i) => ({ i, book: bookOn(hid, i.id, st.at) }))
+      .sort((a, b) => cmp(iCat(a.i.id), iCat(b.i.id)) || cmp(a.i.name, b.i.name));
+  };
+  const totals = () => {
+    const ent = Object.entries(st.v).filter(([, v]) => v !== "");
+    const hid = +st.h;
+    const d = ent.filter(([id, v]) => +v !== bookOn(hid, +id, st.at)).length;
+    sum.textContent = ent.length ? `${nf(ent.length)} entered · ${nf(d)} with a difference` : "";
+  };
+  const draw = () => {
+    if (!st.h) { list.innerHTML = `<div class="empty">${ic("box")}<div>Choose the unit or warehouse to count.</div></div>`; totals(); return; }
+    const L = lines();
+    if (!L.length) { list.innerHTML = `<div class="empty">${ic("inbox")}<div>${st.all || st.q ? "No items match." : "No stock history here. Tick Show all items to count anything."}</div></div>`; totals(); return; }
+    list.innerHTML = `<div class="tw pctw"><table><thead><tr><th>Item</th><th>Category</th><th class="num">System Qty</th><th class="num">Physical Qty</th><th class="num">Difference</th><th>Note</th></tr></thead><tbody>${L.map(({ i, book }) => {
+      const v = st.v[i.id] ?? "", d = v === "" ? null : +v - book;
+      return `<tr data-iid="${i.id}" data-book="${book}" class="${d ? "pcd" : ""}"><td data-l="Item"><b>${esc(i.name)}</b> <small class="dim">${esc(i.unit)}</small></td><td data-l="Category" class="dim">${esc(iCat(i.id))}</td><td data-l="System" class="num">${nf(book)}</td>
+        <td data-l="Physical" class="num"><input class="pcq" type="number" min="0" step="1" inputmode="numeric" value="${esc(v)}" aria-label="Physical qty of ${esc(i.name)}"></td>
+        <td data-l="Difference" class="num pcdiff">${d == null ? `<span class="dim">—</span>` : diffHtml(d)}</td>
+        <td data-l="Note"><input class="pcn inp" value="${esc(st.n[i.id] || "")}" ${d ? "" : "disabled"} aria-label="Note for ${esc(i.name)}"></td></tr>`;
+    }).join("")}</tbody></table></div>`;
+    totals();
+  };
+  list.addEventListener("input", (e) => {
+    const tr = e.target.closest("tr[data-iid]"); if (!tr) return;
+    const id = +tr.dataset.iid, book = +tr.dataset.book;
+    if (e.target.classList.contains("pcq")) {
+      const v = e.target.value.trim(); st.v[id] = v;
+      const d = v === "" ? null : +v - book;
+      $(".pcdiff", tr).innerHTML = d == null ? `<span class="dim">—</span>` : diffHtml(d);
+      tr.classList.toggle("pcd", !!d);
+      const n = $(".pcn", tr); n.disabled = !d; if (d) n.placeholder = "Reason for the difference";
+      totals();
+    } else st.n[id] = e.target.value;
+  });
+  $("#pcH", w).onchange = (e) => { st.h = e.target.value; st.v = {}; st.n = {}; draw(); };
+  $("#pcAt", w).onchange = (e) => { st.at = e.target.value || today(); draw(); };
+  $("#pcAll", w).onchange = (e) => { st.all = e.target.checked; draw(); };
+  $("#pcQ", w).oninput = (e) => { st.q = e.target.value.trim(); draw(); };
+  w.addEventListener("click", (e) => { if (e.target.closest("[data-close]")) closeDlg(); });
+  $("form", w).onsubmit = async (e) => {
+    e.preventDefault();
+    const bad = (t) => { err.innerHTML = `${ic("alert")}<span>${esc(t)}</span>`; };
+    if (!st.h) return bad("Choose the unit or warehouse.");
+    if (!st.at || st.at > today()) return bad("Enter the count date (today or earlier).");
+    const hid = +st.h;
+    const ent = Object.entries(st.v).filter(([, v]) => v !== "");
+    if (!ent.length) return bad("Enter the physical qty of at least one item.");
+    for (const [id, v] of ent) {
+      if (!/^\d+$/.test(v)) return bad(`Enter a whole number of 0 or more for ${iName(+id)}.`);
+      if (+v !== bookOn(hid, +id, st.at) && !String(st.n[id] || "").trim()) return bad(`${iName(+id)}: add a note explaining the difference.`);
+    }
+    const go = $("#pcGo", w); go.disabled = true; go.textContent = "Saving…"; err.textContent = "";
+    try {
+      const r = await api("count.save", { hostelId: hid, at: st.at, lines: ent.map(([id, v]) => ({ itemId: +id, physicalQty: v, note: st.n[id] || "" })) });
+      closeDlg(); toast(`${r.no} saved · ${nf(r.lines)} item${r.lines === 1 ? "" : "s"}${r.diffs ? ` · ${nf(r.diffs)} waiting for approval` : " · all matched"}`); await reload();
+    } catch (ex) { bad(ex.message); go.disabled = false; go.textContent = "Save Count"; }
+  };
+  draw();
+}
+function countDecideForm(id, approve) {
+  const c = S.d.counts.find((x) => x.id === id);
+  if (!c) return;
+  const sub = `${esc(iName(c.itemId))} · ${esc(hName(c.hostelId))} · ${fmtD(c.at)}`;
+  const d = c.diff > 0 ? `+${nf(c.diff)}` : `−${nf(-c.diff)}`;
+  openForm({
+    title: approve ? "Approve Count Difference" : "Reject Count Difference", sub, danger: !approve,
+    fields: [{ k: "s", l: "System Qty", type: "text", half: 1, val: nf(c.bookQty), ro: 1 }, { k: "p", l: "Physical Qty", type: "text", half: 1, val: nf(c.physicalQty), ro: 1 },
+      { k: "d", l: approve ? "Stock Adjustment" : "Difference", type: "text", val: `${d} ${iUnit(c.itemId)}`, ro: 1 },
+      { k: "note", l: approve ? "Note" : "Reason", type: "textarea", req: !approve }],
+    submit: approve ? "Approve" : "Reject",
+    onSubmit: async (v) => { await api("count.decide", { id, decision: approve ? "approve" : "reject", note: v.note }); return approve ? `${c.no}: stock adjusted by ${d}` : `${c.no} rejected`; },
+  });
+}
 
 /* ---------- item ledger ---------- */
 V.ledger = () => {
@@ -1541,6 +1709,9 @@ const ACT = {
   issue: (el) => issueForm(el.dataset.kind || "transfer"),
   stockin: () => stockForm(),
   bulkup: () => bulkForm(),
+  countin: () => countForm(),
+  cntok: (el) => countDecideForm(+el.dataset.id, true),
+  cntno: (el) => countDecideForm(+el.dataset.id, false),
   guide: (el) => { fv("training").g = el.dataset.id; render(); window.scrollTo({ top: 0, behavior: "smooth" }); },
   gopage: (el) => go(el.dataset.go),
   csv: (el) => downloadCSV(el.dataset.key),
@@ -1609,7 +1780,7 @@ async function saveSettings(quiet) { await api("settings.save", settingsVals());
 const NAV = [
   { g: "Overview" }, { v: "home", l: "Dashboard", i: "home" }, { v: "inventory", l: "Inventory", i: "box" },
   // All Damaged / All Transfers / All Repairs stay reachable by link but are not in the menu.
-  { g: "Operations" }, { v: "stock", l: "In Register", i: "in" }, { v: "issues", l: "Out Register", i: "send" },
+  { g: "Operations" }, { v: "stock", l: "In Register", i: "in" }, { v: "issues", l: "Out Register", i: "send" }, { v: "physical", l: "Physical Stock", i: "check", n: () => M.cntPending, hot: 1 },
   // Transfer / Damage / Repair approval pages are reached from the Dashboard tiles and the phone's Approvals tab.
   { g: "Records" }, { v: "warranties", l: "Warranties", i: "shield", n: () => M.exp30, hot: 1 },
   { g: "Masters", admin: 1 }, { v: "foundations", l: "Foundations", i: "building", admin: 1 }, { v: "hostels", l: "Units", i: "home", admin: 1 }, { v: "items", l: "Items", i: "tag", admin: 1 }, { v: "categories", l: "Categories", i: "folder", admin: 1 }, { v: "units", l: "Measuring units", i: "box", admin: 1 },

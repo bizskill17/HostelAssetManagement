@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 /** Name of a Foundation's Central Warehouse (kept in step when the Foundation is renamed). */
 function warehouseName(string $foundation): string
@@ -94,6 +94,17 @@ function ensureSchema(PDO $db): void
             KEY idx_w_exp (expiry_at)
         ) $E",
         "CREATE TABLE IF NOT EXISTS ha_settings (k VARCHAR(40) PRIMARY KEY, v TEXT NOT NULL) $E",
+        // v8: physical stock counts. Each line compares the counted qty with the system qty on that date;
+        // a difference waits for approval and then adjusts stock (a ha_txns row of kind 'adjust').
+        "CREATE TABLE IF NOT EXISTS ha_counts (
+            id INT AUTO_INCREMENT PRIMARY KEY, batch INT NOT NULL DEFAULT 0,
+            hostel_id INT NOT NULL, item_id INT NOT NULL, at DATE NOT NULL,
+            book_qty INT NOT NULL, physical_qty INT NOT NULL, note VARCHAR(500) NOT NULL DEFAULT '',
+            status VARCHAR(12) NOT NULL DEFAULT 'ok',
+            created_by INT NULL, created_at BIGINT NOT NULL,
+            decided_by INT NULL, decided_at BIGINT NULL, decision_note VARCHAR(500) NOT NULL DEFAULT '',
+            KEY idx_c_hi (hostel_id, item_id), KEY idx_c_batch (batch)
+        ) $E",
         // v6: Organization → Foundations → Units. Each Foundation has one Central Warehouse (a ha_hostels row with kind 'warehouse').
         "CREATE TABLE IF NOT EXISTS ha_foundations (
             id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(120) NOT NULL, tg_chat VARCHAR(64) NOT NULL DEFAULT '',

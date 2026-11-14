@@ -15,6 +15,7 @@ It runs on Hostinger shared hosting (PHP 8 + MySQL). Every push to `main` deploy
 | **Issue register** | Every issue: **transfer** (warehouse → warehouse, warehouse → unit, unit → warehouse, unit → unit), **send for repair** (Internal or External), or **damaged**. Warranty items are issued one piece at a time |
 | **Approvals** | Transfers wait for the receiving unit / warehouse to update the received qty. Damage waits for an Admin, Organization or the Foundation user to approve |
 | **Repairs** | Items out for repair, what's overdue, and **Record return** (repaired → back in stock; not repairable → goes to damage approval) |
+| **Physical Stock** | **Add Physical Count**: pick a unit / warehouse and date, enter the counted qty per item. The system qty on that date and the difference are shown; a difference needs a note and waits for an Admin, Organization or the Foundation user to approve, which adjusts stock (*Physical adjustment*). Inventory shows the latest Physical Date, Physical Qty and Difference |
 | **Damaged** | Everything written off, with where it was sent (optional) |
 | **Warranties** | Warranty / AMC number, supplier, quantity, expiry. Shows what expires in 30 / 90 days |
 | **Masters** (Admin) | Foundations (each creates its Central Warehouse), Units (Hostel / College), Items, Categories (Warranty applicable yes/no), Measuring units, Damage destinations, Users |
@@ -25,7 +26,7 @@ Every list has counts on top, search and filters, and **Download CSV** (which do
 ### How the counts work
 - **In** = received + transfers in + returned from repair
 - **Issued** = transfers out + sent for repair
-- **Current inventory** = opening + in − issued − damaged
+- **Current inventory** = opening + in − issued − damaged ± approved physical adjustments
 - A transfer waiting for approval doesn't change stock yet, but it does reserve the quantity so it can't be issued twice.
 
 ## Roles

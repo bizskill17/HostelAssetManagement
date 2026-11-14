@@ -369,6 +369,21 @@ function cronKey(): string
     return substr(hash_hmac('sha256', 'hostel-assets-cron', DB_PASS), 0, 32);
 }
 
+function shapeCount(array $r): array
+{
+    return [
+        'id' => (int) $r['id'], 'no' => 'PC-' . str_pad((string) $r['batch'], 5, '0', STR_PAD_LEFT), 'batch' => (int) $r['batch'],
+        'hostelId' => (int) $r['hostel_id'], 'itemId' => (int) $r['item_id'], 'at' => $r['at'], 'bookQty' => (int) $r['book_qty'],
+        'physicalQty' => (int) $r['physical_qty'], 'diff' => (int) $r['physical_qty'] - (int) $r['book_qty'], 'note' => $r['note'], 'status' => $r['status'],
+        'createdBy' => $r['created_by'] === null ? null : (int) $r['created_by'], 'createdAt' => (int) $r['created_at'],
+        'decidedBy' => $r['decided_by'] === null ? null : (int) $r['decided_by'], 'decidedAt' => $r['decided_at'] === null ? null : (int) $r['decided_at'], 'decisionNote' => $r['decision_note'],
+    ];
+}
+/** System qty of an item at a unit / warehouse at the end of a date. */
+function bookQtyOn(int $hid, int $iid, string $at): int
+{
+    return (int) q("SELECT COALESCE(SUM(dir * qty), 0) FROM ha_txns WHERE hostel_id = ? AND item_id = ? AND at <= ?", [$hid, $iid, $at])->fetchColumn();
+}
 function shapeIssue(array $r): array
 {
     return [
@@ -474,6 +489,7 @@ try {
                 ? db()->query("SELECT * FROM ha_issues ORDER BY id DESC")
                 : q("SELECT * FROM ha_issues WHERE $inH OR $inTo ORDER BY id DESC", [...$hp, ...$hp]))->fetchAll());
 
+            $res['counts'] = array_map('shapeCount', (seesAll($u) ? db()->query("SELECT * FROM ha_counts ORDER BY at DESC, id DESC") : q("SELECT * FROM ha_counts WHERE $inH ORDER BY at DESC, id DESC", $hp))->fetchAll());
             $res['warranties'] = array_map(fn($r) => [
                 'id' => (int) $r['id'], 'hostelId' => $r['hostel_id'] === null ? null : (int) $r['hostel_id'],
                 'categoryId' => $r['category_id'] === null ? null : (int) $r['category_id'], 'itemId' => $r['item_id'] === null ? null : (int) $r['item_id'],
@@ -693,7 +709,7 @@ try {
                     q("DELETE FROM ha_foundations WHERE id=?", [$id]);
                     break;
                 case 'items':
-                    if ($used("SELECT 1 FROM ha_txns WHERE item_id=? LIMIT 1") || $used("SELECT 1 FROM ha_issues WHERE item_id=? LIMIT 1")) {
+                    if ($used("SELECT 1 FROM ha_txns WHERE item_id=? LIMIT 1") || $used("SELECT 1 FROM ha_issues WHERE item_id=? LIMIT 1") || $used("SELECT 1 FROM ha_counts WHERE item_id=? LIMIT 1")) {
                         fail('This item has stock history, so it can\'t be deleted. Mark it inactive instead.');
                     }
                     q("DELETE FROM ha_items WHERE id=?", [$id]);
@@ -1109,6 +1125,105 @@ try {
             out(['ok' => true]);
         }
 
+        case 'count.save': {
+            // A physical count for one unit / warehouse: one line per item counted. Lines that match are 'ok';
+            // a difference needs a note and waits for approval before stock is adjusted.
+            $u = requireUser();
+            $b = body();
+            $hid = idOrNull($b['hostelId'] ?? null);
+            $loc = hostelRow($hid);
+            if (!$loc) {
+                fail('Choose the unit or warehouse.');
+            }
+            if (!canHostel($u, $hid)) {
+                fail("You don't look after {$loc['name']}.", 403, 'forbidden');
+            }
+            $at = dateOr($b['at'] ?? '', null);
+            if (!$at || $at > today()) {
+                fail('Enter the count date (today or earlier).');
+            }
+            $lines = [];
+            foreach (is_array($b['lines'] ?? null) ? $b['lines'] : [] as $l) {
+                $iid = idOrNull($l['itemId'] ?? null);
+                $raw = $l['physicalQty'] ?? '';
+                if (!$iid || $raw === '' || $raw === null) {
+                    continue;
+                }
+                $item = itemRow($iid);
+                if (!$item) {
+                    fail('An item in the count no longer exists.');
+                }
+                if (!is_numeric($raw) || (int) $raw < 0 || (string) (int) $raw !== trim((string) $raw)) {
+                    fail("Enter a whole number of 0 or more for {$item['name']}.");
+                }
+                $book = bookQtyOn($hid, $iid, $at);
+                $note = str($l['note'] ?? '', 500);
+                if ((int) $raw !== $book && $note === '') {
+                    fail("{$item['name']}: counted " . (int) $raw . " but the system has $book. Add a note explaining the difference.");
+                }
+                $lines[] = [$iid, $book, (int) $raw, $note];
+            }
+            if (!$lines) {
+                fail('Enter the physical qty of at least one item.');
+            }
+            db()->beginTransaction();
+            $batch = 0;
+            $diffs = [];
+            foreach ($lines as [$iid, $book, $phys, $note]) {
+                q("INSERT INTO ha_counts (batch, hostel_id, item_id, at, book_qty, physical_qty, note, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [$batch, $hid, $iid, $at, $book, $phys, $note, $phys === $book ? 'ok' : 'pending', $u['id'], nowMs()]);
+                $id = (int) db()->lastInsertId();
+                if (!$batch) {
+                    $batch = $id;
+                    q("UPDATE ha_counts SET batch = ? WHERE id = ?", [$batch, $id]);
+                }
+                if ($phys !== $book) {
+                    $diffs[] = [$iid, $book, $phys];
+                }
+            }
+            db()->commit();
+            notifyCount($hid, $batch, $at, count($lines), $diffs, $u);
+            out(['ok' => true, 'no' => 'PC-' . str_pad((string) $batch, 5, '0', STR_PAD_LEFT), 'lines' => count($lines), 'diffs' => count($diffs)]);
+        }
+
+        case 'count.decide': {
+            // Admin, Organization or the Foundation approves a difference (stock is adjusted to the count) or rejects it.
+            $u = requireUser();
+            $b = body();
+            $c = q("SELECT * FROM ha_counts WHERE id = ?", [idOrNull($b['id'] ?? null) ?? 0])->fetch();
+            if (!$c) {
+                fail('That count line no longer exists.');
+            }
+            if (!canApprove($u, (int) $c['hostel_id'])) {
+                fail('Only an Admin, Organization or the Foundation user can approve a count difference.', 403, 'forbidden');
+            }
+            if ($c['status'] !== 'pending') {
+                fail('This count line has already been decided.');
+            }
+            $approve = ($b['decision'] ?? '') === 'approve';
+            $note = str($b['note'] ?? '', 500);
+            if (!$approve && $note === '') {
+                fail('Give a reason for rejecting.');
+            }
+            db()->beginTransaction();
+            lockHostel((int) $c['hostel_id']);
+            if ($approve) {
+                $diff = (int) $c['physical_qty'] - (int) $c['book_qty'];
+                if ($diff < 0) {
+                    $avail = onHand((int) $c['hostel_id'], (int) $c['item_id']) - pendingOut((int) $c['hostel_id'], (int) $c['item_id']);
+                    if (-$diff > $avail) {
+                        db()->rollBack();
+                        fail("Only $avail are free in stock now, so " . (-$diff) . " can't be taken off. Check open transfers or damage first.");
+                    }
+                }
+                addTxn(['hostel_id' => (int) $c['hostel_id'], 'item_id' => (int) $c['item_id'], 'kind' => 'adjust', 'dir' => $diff > 0 ? 1 : -1, 'qty' => abs($diff),
+                    'party' => 'Physical count PC-' . str_pad((string) $c['batch'], 5, '0', STR_PAD_LEFT), 'at' => today(), 'notes' => $c['note']], $u);
+            }
+            q("UPDATE ha_counts SET status = ?, decided_by = ?, decided_at = ?, decision_note = ? WHERE id = ?", [$approve ? 'approved' : 'rejected', $u['id'], nowMs(), $note, $c['id']]);
+            db()->commit();
+            out(['ok' => true]);
+        }
+
         case 'repair.return': {
             // Items back from repair: okQty go back into stock; scrapQty were not repairable and count as damaged.
             $u = requireUser();
@@ -1273,7 +1388,7 @@ try {
             $done = [];
             // all=1: everything except user logins and settings (masters too); numbering starts again from 1.
             $all = !empty($_GET['all']);
-            $tables = $all ? ['ha_txns', 'ha_issues', 'ha_warranties', 'ha_hostels', 'ha_foundations', 'ha_items', 'ha_categories', 'ha_units', 'ha_damage_places'] : ['ha_txns', 'ha_issues', 'ha_warranties'];
+            $tables = $all ? ['ha_txns', 'ha_issues', 'ha_warranties', 'ha_counts', 'ha_hostels', 'ha_foundations', 'ha_items', 'ha_categories', 'ha_units', 'ha_damage_places'] : ['ha_txns', 'ha_issues', 'ha_warranties', 'ha_counts'];
             foreach ($tables as $t) {
                 $done[$t] = (int) db()->query("SELECT COUNT(*) FROM $t")->fetchColumn();
                 db()->exec($all ? "TRUNCATE TABLE $t" : "DELETE FROM $t");
