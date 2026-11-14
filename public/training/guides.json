@@ -1,0 +1,465 @@
+[
+ {
+  "id": "getting-started",
+  "group": "Getting Started",
+  "title": "Getting Started",
+  "roles": null,
+  "video": "getting-started.mp4",
+  "dur": 42.4,
+  "open": "home",
+  "intro": "Welcome to Hostel Asset Management. This short video shows how to sign in and find your way around.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "Overview: Dashboard and Inventory",
+   "Operations: In Register and Out Register",
+   "Records: Warranties",
+   "Masters and Settings (Admin)",
+   "Dashboard tiles open the list",
+   "Sign out at the bottom of the menu"
+  ],
+  "poster": "getting-started.jpg"
+ },
+ {
+  "id": "masters-foundation",
+  "group": "Masters",
+  "title": "Add a Foundation",
+  "roles": [
+   "Admin"
+  ],
+  "video": "masters-foundation.mp4",
+  "dur": 46.8,
+  "open": "foundations",
+  "intro": "In this video, you will learn how to add a Foundation. Every Foundation gets its own Central Warehouse automatically.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "Click Masters → Foundations",
+   "Click + Add Foundation",
+   "Type the Foundation Name",
+   "Telegram Group ID (optional)",
+   "Click Add Foundation to save",
+   "Saved — Central Warehouse created automatically",
+   "Edit: click the blue pencil button"
+  ],
+  "poster": "masters-foundation.jpg"
+ },
+ {
+  "id": "masters-unit",
+  "group": "Masters",
+  "title": "Add a Unit",
+  "roles": [
+   "Admin"
+  ],
+  "video": "masters-unit.mp4",
+  "dur": 41.5,
+  "open": "hostels",
+  "intro": "In this video, you will learn how to add a Unit. A unit is a hostel or a college under a Foundation.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "Click Masters → Units",
+   "Click + Add Unit",
+   "Type the Unit Name",
+   "Choose the Foundation",
+   "Choose Unit Type: Hostel or College",
+   "Address / Location (optional)",
+   "Click Add Unit to save",
+   "Saved — edit with the blue pencil button"
+  ],
+  "poster": "masters-unit.jpg"
+ },
+ {
+  "id": "masters-category",
+  "group": "Masters",
+  "title": "Add a Category",
+  "roles": [
+   "Admin"
+  ],
+  "video": "masters-category.mp4",
+  "dur": 38.1,
+  "open": "categories",
+  "intro": "In this video, you will learn how to add a Category, and how to mark it for warranty.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "Click Masters → Categories",
+   "Click + Add Category",
+   "Type the Category Name",
+   "Tick Warranty Applicable (if items have a warranty)",
+   "Click Add Category to save",
+   "Saved"
+  ],
+  "poster": "masters-category.jpg"
+ },
+ {
+  "id": "masters-measuring-unit",
+  "group": "Masters",
+  "title": "Add a Measuring Unit",
+  "roles": [
+   "Admin"
+  ],
+  "video": "masters-measuring-unit.mp4",
+  "dur": 28.8,
+  "open": "units",
+  "intro": "In this video, you will learn how to add a Measuring Unit, such as Nos, Sets or Kg.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "Click Masters → Measuring Units",
+   "Click + Add Measuring Unit",
+   "Type the Measuring Unit",
+   "Click Add Measuring Unit to save",
+   "Saved"
+  ],
+  "poster": "masters-measuring-unit.jpg"
+ },
+ {
+  "id": "masters-damage-destination",
+  "group": "Masters",
+  "title": "Add a Damage Destination",
+  "roles": [
+   "Admin"
+  ],
+  "video": "masters-damage-destination.mp4",
+  "dur": 31.9,
+  "open": "places",
+  "intro": "In this video, you will learn how to add a Damage Destination. This is where damaged items are sent, such as a scrap dealer.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "Click Masters → Damage Destinations",
+   "Click + Add Destination",
+   "Type the Destination",
+   "Click Add Destination to save",
+   "Saved"
+  ],
+  "poster": "masters-damage-destination.jpg"
+ },
+ {
+  "id": "masters-item",
+  "group": "Masters",
+  "title": "Add an Item",
+  "roles": [
+   "Admin"
+  ],
+  "video": "masters-item.mp4",
+  "dur": 41.4,
+  "open": "items",
+  "intro": "In this video, you will learn how to add an Item. Items are the assets you count, like beds, fans and chairs.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "Click Masters → Items",
+   "Click + Add Item",
+   "Type the Item Name",
+   "Choose the Category",
+   "Choose the Measuring Unit",
+   "Click Add Item to save",
+   "Saved"
+  ],
+  "poster": "masters-item.jpg"
+ },
+ {
+  "id": "masters-user",
+  "group": "Masters",
+  "title": "Add a User",
+  "roles": [
+   "Admin"
+  ],
+  "video": "masters-user.mp4",
+  "dur": 47.0,
+  "open": "users",
+  "intro": "In this video, you will learn how to add a User and choose their role.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "Click Masters → Users",
+   "Click + Add User",
+   "Type Full Name and Email",
+   "Choose the Role",
+   "Choose the Unit",
+   "Set a Password, then Add User",
+   "Saved — they can sign in now"
+  ],
+  "poster": "masters-user.jpg"
+ },
+ {
+  "id": "in-purchase",
+  "group": "In Register",
+  "title": "Add a Purchase",
+  "roles": null,
+  "video": "in-purchase.mp4",
+  "dur": 41.0,
+  "open": "stock",
+  "intro": "In this video, you will learn how to enter a purchase in the In Register.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "Click Operations → In Register",
+   "Click + Add Stock",
+   "Type: Purchase",
+   "Choose the Unit / Warehouse",
+   "Choose the Item",
+   "Enter Quantity and Purchase Date",
+   "Supplier and Notes (bill number)",
+   "Click Add Stock to save"
+  ],
+  "poster": "in-purchase.jpg"
+ },
+ {
+  "id": "in-opening-stock",
+  "group": "In Register",
+  "title": "Add Opening Stock",
+  "roles": null,
+  "video": "in-opening-stock.mp4",
+  "dur": 37.6,
+  "open": "stock",
+  "intro": "In this video, you will learn how to enter opening stock, the items a unit already has when you start.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "In Register → + Add Stock",
+   "Type: Opening Stock",
+   "Choose the Unit and the Item",
+   "Enter Quantity and As Of Date",
+   "Click Add Stock — once per item per unit"
+  ],
+  "poster": "in-opening-stock.jpg"
+ },
+ {
+  "id": "in-warranty-item",
+  "group": "In Register",
+  "title": "Add a Warranty Item",
+  "roles": null,
+  "video": "in-warranty-item.mp4",
+  "dur": 43.6,
+  "open": "stock",
+  "intro": "In this video, you will learn how to enter an item that has a warranty, like a fan or a generator.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "In Register → + Add Stock",
+   "Choose the Item — Quantity is fixed at 1",
+   "Enter Supplier and Serial No.",
+   "Enter Warranty Expiry and Notes",
+   "Add Stock — warranty is added automatically"
+  ],
+  "poster": "in-warranty-item.jpg"
+ },
+ {
+  "id": "in-bulk-upload",
+  "group": "In Register",
+  "title": "Bulk Upload Opening Stock",
+  "roles": null,
+  "video": "in-bulk-upload.mp4",
+  "dur": 40.0,
+  "open": "stock",
+  "intro": "In this video, you will learn how to load opening stock for many items at once from an Excel file.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "In Register → Bulk Upload",
+   "Click Download Template",
+   "Fill one row per Unit and Item, then save",
+   "Upload the Filled File",
+   "All rows ready → click Import"
+  ],
+  "poster": "in-bulk-upload.jpg"
+ },
+ {
+  "id": "out-transfer",
+  "group": "Out Register",
+  "title": "Transfer Items",
+  "roles": null,
+  "video": "out-transfer.mp4",
+  "dur": 48.6,
+  "open": "issues",
+  "intro": "In this video, you will learn how to transfer items from the Central Warehouse to a unit. The same steps work between any two units or warehouses.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "Out Register → + Issue Asset",
+   "Transfer · choose From",
+   "Choose the Item",
+   "Enter the Quantity",
+   "Choose To (Unit or Warehouse)",
+   "Click Issue",
+   "Waiting for the receiver to update Received Qty"
+  ],
+  "poster": "out-transfer.jpg"
+ },
+ {
+  "id": "out-warranty-item",
+  "group": "Out Register",
+  "title": "Issue a Warranty Item",
+  "roles": null,
+  "video": "out-warranty-item.mp4",
+  "dur": 38.1,
+  "open": "issues",
+  "intro": "In this video, you will learn how to issue an item that has a warranty, by choosing its serial number.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "Out Register → + Issue Asset",
+   "Choose From",
+   "Choose the piece: Item(Serial No.)",
+   "Choose To, then Issue",
+   "Serial No. shown on the entry"
+  ],
+  "poster": "out-warranty-item.jpg"
+ },
+ {
+  "id": "out-repair",
+  "group": "Out Register",
+  "title": "Send for Repair",
+  "roles": null,
+  "video": "out-repair.mp4",
+  "dur": 41.8,
+  "open": "issues",
+  "intro": "In this video, you will learn how to send items for repair.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "Out Register → + Issue Asset → Repair",
+   "Choose From, Item and Quantity",
+   "Repair Type: External or Internal",
+   "Sent To and Expected Back",
+   "Click Issue"
+  ],
+  "poster": "out-repair.jpg"
+ },
+ {
+  "id": "out-damage",
+  "group": "Out Register",
+  "title": "Mark Items Damaged",
+  "roles": null,
+  "video": "out-damage.mp4",
+  "dur": 37.8,
+  "open": "issues",
+  "intro": "In this video, you will learn how to report damaged items.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "Out Register → + Issue Asset → Damaged",
+   "Choose From, Item and Quantity",
+   "Sent To After Damage, and Notes",
+   "Click Issue — waits for approval"
+  ],
+  "poster": "out-damage.jpg"
+ },
+ {
+  "id": "out-cancel",
+  "group": "Out Register",
+  "title": "Cancel a Waiting Entry",
+  "roles": null,
+  "video": "out-cancel.mp4",
+  "dur": 24.0,
+  "open": "issues",
+  "intro": "In this video, you will learn how to cancel a transfer or damage report that is still waiting.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "Find the waiting entry",
+   "Click the grey X (Cancel)",
+   "Confirm — stock does not change"
+  ],
+  "poster": "out-cancel.jpg"
+ },
+ {
+  "id": "approve-receive-transfer",
+  "group": "Approval",
+  "title": "Receive a Transfer",
+  "roles": null,
+  "video": "approve-receive-transfer.mp4",
+  "dur": 31.6,
+  "open": "issues?transfer",
+  "intro": "In this video, you will learn how the receiving unit updates the quantity that arrived in a transfer.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "Out Register → Approval → Transfer",
+   "Click the blue tick (Update Received Qty)",
+   "Enter Received Qty (note if fewer)",
+   "Click Update — stock moves"
+  ],
+  "poster": "approve-receive-transfer.jpg"
+ },
+ {
+  "id": "approve-damage",
+  "group": "Approval",
+  "title": "Approve or Reject Damage",
+  "roles": [
+   "Admin",
+   "Organization",
+   "Foundation"
+  ],
+  "video": "approve-damage.mp4",
+  "dur": 32.2,
+  "open": "issues?damage",
+  "intro": "In this video, you will learn how to approve or reject a damage report.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "Out Register → Approval → Damage",
+   "Green tick = Approve · Orange = Reject",
+   "Check the Approved Qty",
+   "Click Approve"
+  ],
+  "poster": "approve-damage.jpg"
+ },
+ {
+  "id": "approve-repair-return",
+  "group": "Approval",
+  "title": "Record a Repair Return",
+  "roles": null,
+  "video": "approve-repair-return.mp4",
+  "dur": 35.6,
+  "open": "issues?repair",
+  "intro": "In this video, you will learn how to record items coming back from repair.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "Out Register → Approval → Repair",
+   "Click the green Return button",
+   "Repaired and Not Repairable quantities",
+   "Not repairable → Damage approval",
+   "Click Save Return"
+  ],
+  "poster": "approve-repair-return.jpg"
+ },
+ {
+  "id": "inventory",
+  "group": "Records",
+  "title": "Inventory and Item History",
+  "roles": null,
+  "video": "inventory.mp4",
+  "dur": 31.4,
+  "open": "inventory",
+  "intro": "In this video, you will learn how to read the Inventory and an item's history.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "Overview → Inventory",
+   "Filters and Download",
+   "Click an item for its history"
+  ],
+  "poster": "inventory.jpg"
+ },
+ {
+  "id": "warranties",
+  "group": "Records",
+  "title": "Warranties",
+  "roles": null,
+  "video": "warranties.mp4",
+  "dur": 37.8,
+  "open": "warranties",
+  "intro": "In this video, you will learn how to check warranties.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "Records → Warranties",
+   "Edit with the blue pencil button",
+   "Reminders 30, 15, 7, 3, 1 days before"
+  ],
+  "poster": "warranties.jpg"
+ },
+ {
+  "id": "settings-telegram",
+  "group": "Settings",
+  "title": "Telegram Settings",
+  "roles": [
+   "Admin"
+  ],
+  "video": "settings-telegram.mp4",
+  "dur": 31.4,
+  "open": "settings",
+  "intro": "In this video, you will learn how to connect Telegram notifications. This is for the Admin.",
+  "steps": [
+   "Sign in with your Email and Password",
+   "Click Masters → Settings",
+   "Tick Send, add Bot Token and Main Group Chat ID",
+   "Choose Messages and Daily Time",
+   "Save Settings, then Send a Test"
+  ],
+  "poster": "settings-telegram.jpg"
+ }
+]

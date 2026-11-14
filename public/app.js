@@ -23,6 +23,7 @@ const P = {
   check: '<path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/>',
   wrench: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/>',
   alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+  play: '<circle cx="12" cy="12" r="9"/><path d="m10 8.5 5.5 3.5-5.5 3.5z"/>',
   shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
   building: '<path d="M3 21h18"/><path d="M5 21V5l7-3 7 3v16"/><path d="M9 9h1M14 9h1M9 13h1M14 13h1M10 21v-4h4v4"/>',
   tag: '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><path d="M7.5 7.5h.01"/>',
@@ -984,6 +985,31 @@ function masterView(key) {
 }
 ["foundations", "hostels", "items", "categories", "units", "places", "users"].forEach((k) => (V[k] = () => masterView(k)));
 
+/* ---------- training ---------- */
+// Guides with a video (voice-over) and the same steps written out; list in training/guides.json.
+let TRAIN = null;
+const TRAIN_GROUPS = ["Getting Started", "Masters", "In Register", "Out Register", "Approval", "Records", "Settings"];
+const canSeeGuide = (g) => !g.roles || g.roles.includes(M.role);
+V.training = () => {
+  if (!TRAIN) {
+    fetch("training/guides.json", { cache: "no-cache" }).then((r) => r.json()).then((j) => { TRAIN = j; if (S.view === "training") render(); }).catch(() => { TRAIN = []; if (S.view === "training") render(); });
+    return head("Training", "") + `<div class="card"><div class="empty">${ic("play")}<div>Loading…</div></div></div>`;
+  }
+  const f = fv("training");
+  const all = TRAIN.filter(canSeeGuide);
+  const list = all.filter((g) => match(f.q, g.title, g.group, ...g.steps));
+  const cur = all.find((g) => g.id === f.g) || list[0] || all[0];
+  const groups = TRAIN_GROUPS.map((gr) => [gr, list.filter((g) => g.group === gr)]).filter(([, l]) => l.length);
+  const side = `<div class="trside"><div class="search">${ic("search")}<input class="inp" data-fkey="training" data-f="q" value="${esc(f.q || "")}" placeholder="Search…"></div>
+    ${groups.map(([gr, l]) => `<div class="trgrp"><h6>${esc(gr)}</h6>${l.map((g) => `<a class="tri${cur && g.id === cur.id ? " on" : ""}" data-act="guide" data-id="${g.id}">${ic("play")}<span>${esc(g.title)}</span><small>${Math.round(g.dur)}s</small></a>`).join("")}</div>`).join("") || `<div class="empty">${ic("search")}<div>Nothing found.</div></div>`}</div>`;
+  const pick = `<div class="trpick"><select data-fkey="training" data-f="g" aria-label="Choose a training video">${all.map((g) => `<option value="${g.id}"${cur && g.id === cur.id ? " selected" : ""}>${esc(g.group === g.title ? g.title : g.group + " · " + g.title)}</option>`).join("")}</select></div>`;
+  const main = cur ? `<div class="trmain"><div class="trvid"><video controls preload="metadata" playsinline src="training/${cur.video}" poster="${cur.poster ? "training/" + cur.poster : ""}"></video></div>
+    <div class="trbody"><div class="trtag">${esc(cur.group)}</div><h2>${esc(cur.title)}</h2>${cur.intro ? `<p class="trintro">${esc(cur.intro)}</p>` : ""}
+    <ol class="trsteps">${cur.steps.map((t) => `<li>${esc(t)}</li>`).join("")}</ol>
+    ${cur.open ? `<button class="btn" data-act="gopage" data-go="${cur.open}">${ic("send")}Open this page</button>` : ""}</div></div>` : `<div class="card"><div class="empty">${ic("play")}<div>No training videos yet.</div></div></div>`;
+  return head("Training", "") + `<div class="trwrap">${pick}${side}${main}</div>`;
+};
+
 /* ---------- settings ---------- */
 V.settings = () => {
   const s = S.d.settings || {};
@@ -1065,7 +1091,20 @@ function openForm(o) {
   // Labels and hints change with the values; update them in place so typing is never interrupted.
   const isReq = (fd) => (typeof fd.req === "function" ? fd.req(vals) : fd.req);
   function labText(fd) { return `${esc(tc(typeof fd.l === "function" ? fd.l(vals) : fd.l))}${isReq(fd) ? ' <span class="req">*</span>' : ""}`; }
+  // Fields that appear or disappear with a typed value (e.g. "sent to" once "Not repairable" is above 0).
+  const shownSig = () => o.fields.map((fd) => (fd.show && !fd.show(vals) ? 0 : 1)).join("");
+  let lastSig = "";
   function refresh() {
+    const sig = shownSig();
+    if (lastSig && sig !== lastSig) {
+      lastSig = sig;
+      const el = document.activeElement, n = el && el.name, pos = el && el.selectionStart;
+      draw();
+      const back = n && form.elements[n];
+      if (back && back.focus) { back.focus(); try { if (pos != null) back.setSelectionRange(pos, pos); } catch (_) {} }
+      return;
+    }
+    lastSig = sig;
     for (const fd of o.fields) {
       const h = body.querySelector(`[data-help="${fd.k}"]`);
       if (h) {
@@ -1440,6 +1479,8 @@ const ACT = {
   issue: (el) => issueForm(el.dataset.kind || "transfer"),
   stockin: () => stockForm(),
   bulkup: () => bulkForm(),
+  guide: (el) => { fv("training").g = el.dataset.id; render(); window.scrollTo({ top: 0, behavior: "smooth" }); },
+  gopage: (el) => go(el.dataset.go),
   csv: (el) => downloadCSV(el.dataset.key),
   ftoggle: (el) => { S.fopen[el.dataset.key] = !S.fopen[el.dataset.key]; render(); },
   fchip: (el) => { fv(el.dataset.key)[el.dataset.k] = ""; S.page[el.dataset.key] = 0; render(); },
@@ -1511,10 +1552,11 @@ const NAV = [
   { g: "Records" }, { v: "warranties", l: "Warranties", i: "shield", n: () => M.exp30, hot: 1 },
   { g: "Masters", admin: 1 }, { v: "foundations", l: "Foundations", i: "building", admin: 1 }, { v: "hostels", l: "Units", i: "home", admin: 1 }, { v: "items", l: "Items", i: "tag", admin: 1 }, { v: "categories", l: "Categories", i: "folder", admin: 1 }, { v: "units", l: "Measuring units", i: "box", admin: 1 },
   { v: "places", l: "Damage destinations", i: "trash", admin: 1 }, { v: "users", l: "Users", i: "users", admin: 1 }, { v: "settings", l: "Settings", i: "settings", admin: 1 },
+  { g: "Training" }, { v: "training", l: "Training", i: "play" },
 ];
 function renderShell() {
   // Each menu section sits on its own soft colour block.
-  const SEC_TONE = { Overview: "blue", Operations: "teal", "Approvals Pending": "amber", Records: "violet", Masters: "slate" };
+  const SEC_TONE = { Overview: "blue", Operations: "teal", "Approvals Pending": "amber", Records: "violet", Masters: "slate", Training: "rose" };
   let html = "", open = false;
   for (const n of NAV.filter((x) => !x.admin || M.admin)) {
     if (n.g) {
