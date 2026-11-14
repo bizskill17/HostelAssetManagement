@@ -1168,7 +1168,8 @@ function stockForm() {
       { k: "hostelId", l: "Unit / warehouse", type: "select", opts: () => hs, val: String((hs.find(([id]) => isWh(id)) || hs[0])[0]), show: () => hs.length > 1, req: 1 },
       { k: "itemId", l: "Item", type: "select", blank: "— Choose item —", opts: () => groupedItems(items), req: 1,
         help: (v) => (v.itemId ? (v.kind === "opening" && hasOpening(v.hostelId, v.itemId) ? { t: "Opening stock is already entered for this item here. Use Purchase instead.", c: "warn" } : { t: `In stock now: <b>${nf((M.inv.get(v.hostelId + "|" + v.itemId) || {}).current || 0)}</b> ${esc(iUnit(+v.itemId))}${itemHasWarranty(+v.itemId) ? " · this item has a warranty" : ""}` }) : "") },
-      { k: "qty", l: "Quantity", type: "number", req: 1, half: 1 },
+      { k: "qty", l: "Quantity", type: "number", req: 1, half: 1, ro: (v) => itemHasWarranty(+v.itemId),
+        help: (v) => (itemHasWarranty(+v.itemId) ? { t: "Warranty item: one piece per Serial No." } : "") },
       { k: "at", l: (v) => (v.kind === "opening" ? "As of date" : "Purchase date"), type: "date", req: 1, val: today(), half: 1 },
       { k: "party", l: "Supplier", half: 1, ph: "e.g. Sharma Furniture", show: (v) => v.kind === "in" || itemHasWarranty(+v.itemId) },
       { k: "warrantyNo", l: "Serial No.", req: 1, half: 1, show: (v) => itemHasWarranty(+v.itemId) },
@@ -1176,8 +1177,9 @@ function stockForm() {
       { k: "warrantyExpiry", l: "Warranty expiry", type: "date", req: 1, half: 1, show: (v) => itemHasWarranty(+v.itemId) },
       { k: "notes", l: "Notes", type: "textarea", req: (v) => v.kind === "in", ph: (v) => (v.kind === "in" ? "Bill number, where it came from…" : "Remarks") },
     ],
+    onChange: (v, k) => { if (k === "itemId" && itemHasWarranty(+v.itemId)) v.qty = "1"; },
     submit: "Add stock",
-    onSubmit: async (v) => { await api("stock.add", { ...v, hostelId: +v.hostelId, warrantyStart: v.warrantyStart || v.at }); return `Added ${nf(v.qty)} ${iUnit(+v.itemId)} of ${iName(+v.itemId)}${itemHasWarranty(+v.itemId) ? " with its warranty" : ""}`; },
+    onSubmit: async (v) => { await api("stock.add", { ...v, hostelId: +v.hostelId, warrantyStart: v.warrantyStart || v.at }); return itemHasWarranty(+v.itemId) ? `Added ${iName(+v.itemId)} (Serial No. ${v.warrantyNo}) — warranty added to Warranties` : `Added ${nf(v.qty)} ${iUnit(+v.itemId)} of ${iName(+v.itemId)}`; },
   });
 }
 function groupedItems(items) {
@@ -1214,7 +1216,7 @@ function bulkForm() {
   w.innerHTML = `<form novalidate><div class="dh"><div><h2>Opening stock bulk upload</h2><p>Load opening stock for many items at once from a spreadsheet.</p></div><button type="button" class="iconbtn" data-close aria-label="Close">${ic("x")}</button></div>
     <div class="db">
       <div class="fld"><label>1. Download the template</label><div><button type="button" class="btn" id="bkTpl">${ic("download")}Download template</button></div>
-        <div class="help">Open it in Excel or Google Sheets. One row per unit and item. Unit and item names must match the app exactly. Warranty items need the Serial No. and warranty expiry date. Save it as CSV.</div></div>
+        <div class="help">Open it in Excel or Google Sheets. One row per unit and item. Unit and item names must match the app exactly. Warranty items: one row per piece, Qty 1, with its Serial No. and warranty expiry date. Save it as CSV.</div></div>
       <div class="fld"><label for="bkFile">2. Upload the filled file (.csv)</label><input type="file" id="bkFile" accept=".csv,text/csv"></div>
       <div id="bkOut" class="fld"></div>
     </div>
