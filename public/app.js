@@ -1231,8 +1231,7 @@ function bulkForm() {
   w.className = "dlg";
   w.innerHTML = `<form novalidate><div class="dh"><div><h2>Opening Stock Bulk Upload</h2><p>Load opening stock for many items at once from a spreadsheet.</p></div><button type="button" class="iconbtn" data-close aria-label="Close">${ic("x")}</button></div>
     <div class="db">
-      <div class="fld"><label>1. Download the Template</label><div><button type="button" class="btn" id="bkTpl">${ic("download")}Download Template</button></div>
-        <div class="help">Open it in Excel or Google Sheets. One row per unit and item. Unit and item names must match the app exactly. Warranty items: one row per piece, Qty 1, with its Serial No. and warranty expiry date. Save it as CSV.</div></div>
+      <div class="fld"><label>1. Download the Template</label><div><button type="button" class="btn" id="bkTpl">${ic("download")}Download Template</button></div></div>
       <div class="fld"><label for="bkFile">2. Upload the Filled File (.csv)</label><input type="file" id="bkFile" accept=".csv,text/csv"></div>
       <div id="bkOut" class="fld"></div>
     </div>
