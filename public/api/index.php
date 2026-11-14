@@ -214,12 +214,12 @@ function pendingOut(int $hid, int $iid, int $exceptIssue = 0): int
  * Records damage. Every entry, an Admin's too, waits in Approvals → Damage (stock is only set aside)
  * until an Admin approves it. The confirmed quantity is kept in received_qty.
  */
-function recordDamage(array $u, int $hid, int $iid, int $qty, string $place, string $at, string $notes): array
+function recordDamage(array $u, int $hid, int $iid, int $qty, string $place, string $at, string $notes, string $serial = ''): array
 {
     $approved = false;
-    q("INSERT INTO ha_issues (kind, status, hostel_id, item_id, qty, place, at, notes, received_qty, created_by, created_at, decided_by, decided_at)
-       VALUES ('damage', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [
-        $approved ? 'done' : 'pending', $hid, $iid, $qty, $place, $at, $notes, $approved ? $qty : null, $u['id'], nowMs(),
+    q("INSERT INTO ha_issues (kind, status, hostel_id, item_id, qty, serial_no, place, at, notes, received_qty, created_by, created_at, decided_by, decided_at)
+       VALUES ('damage', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [
+        $approved ? 'done' : 'pending', $hid, $iid, $qty, $serial, $place, $at, $notes, $approved ? $qty : null, $u['id'], nowMs(),
         $approved ? $u['id'] : null, $approved ? nowMs() : null,
     ]);
     $id = (int) db()->lastInsertId();
@@ -285,6 +285,11 @@ function stockAdd(array $u, array $b, bool $checkOnly = false, bool $notify = tr
         notifyStockIn($hid, $iid, $qty, $party, $notes, $u);
     }
     return '';
+}
+/** True when this Serial No. is in a transfer, repair or damage entry that is still open, or was written off. */
+function serialBusy(int $iid, string $serial): bool
+{
+    return (bool) q("SELECT 1 FROM ha_issues WHERE item_id = ? AND serial_no = ? AND (status = 'pending' OR (kind = 'repair' AND status IN ('at_repair', 'partly_returned')) OR (kind = 'damage' AND status = 'done'))", [$iid, $serial])->fetchColumn();
 }
 /** True when the item's category is marked "Warranty applicable". */
 function itemWarranty(int $iid): bool
@@ -365,7 +370,7 @@ function shapeIssue(array $r): array
     return [
         'id' => (int) $r['id'], 'no' => issueNo($r), 'kind' => $r['kind'], 'status' => $r['status'],
         'hostelId' => (int) $r['hostel_id'], 'toHostelId' => $r['to_hostel_id'] === null ? null : (int) $r['to_hostel_id'],
-        'itemId' => (int) $r['item_id'], 'qty' => (int) $r['qty'], 'place' => $r['place'], 'at' => $r['at'],
+        'itemId' => (int) $r['item_id'], 'qty' => (int) $r['qty'], 'serialNo' => $r['serial_no'] ?? '', 'place' => $r['place'], 'at' => $r['at'],
         'expectedAt' => $r['expected_at'], 'notes' => $r['notes'], 'returnedQty' => (int) $r['returned_qty'],
         'repairType' => $r['repair_type'] ?? '', 'scrappedQty' => (int) $r['scrapped_qty'], 'receivedQty' => $r['received_qty'] === null ? null : (int) $r['received_qty'], 'createdBy' => $r['created_by'] === null ? null : (int) $r['created_by'],
         'createdAt' => (int) $r['created_at'], 'decidedBy' => $r['decided_by'] === null ? null : (int) $r['decided_by'],
@@ -833,9 +838,26 @@ try {
             if ($qty <= 0) {
                 fail('Enter a quantity greater than 0.');
             }
-            // Items with a warranty are issued one piece at a time.
-            if ($qty > 1 && itemWarranty($iid)) {
-                fail("{$item['name']} has a warranty, so it is issued one piece at a time. Enter quantity 1.");
+            // Items with a warranty are issued one piece at a time, chosen by its Serial No.
+            $serial = '';
+            if (itemWarranty($iid)) {
+                if ($qty > 1) {
+                    fail("{$item['name']} has a warranty, so it is issued one piece at a time. Enter quantity 1.");
+                }
+                $serial = str($b['serialNo'] ?? '', 80);
+                // Stock entered before its category had warranty has no Serial No.; it can go without one.
+                $free = array_filter(q("SELECT DISTINCT warranty_no FROM ha_warranties WHERE item_id = ? AND hostel_id = ? AND warranty_no <> ''", [$iid, $hid])->fetchAll(PDO::FETCH_COLUMN), fn($sn) => !serialBusy($iid, (string) $sn));
+                if ($serial === '' && $free) {
+                    fail('Choose the Serial No. of the piece.');
+                }
+                if ($serial !== '') {
+                    if (!q("SELECT 1 FROM ha_warranties WHERE item_id = ? AND hostel_id = ? AND warranty_no = ?", [$iid, $hid, $serial])->fetchColumn()) {
+                        fail("Serial No. $serial of {$item['name']} is not at this unit / warehouse.");
+                    }
+                    if (serialBusy($iid, $serial)) {
+                        fail("Serial No. $serial is already in an open transfer, repair or damage entry, or was written off.");
+                    }
+                }
             }
             $rtype = $kind === 'repair' ? (($b['repairType'] ?? '') === 'Internal' ? 'Internal' : 'External') : '';
             if ($kind === 'repair' && $place === '') {
@@ -864,7 +886,7 @@ try {
                 fail("Only $avail {$item['unit']} of {$item['name']} available to issue here.");
             }
             if ($kind === 'damage') {
-                $issue = recordDamage($u, $hid, $iid, $qty, $place, $at, $notes);
+                $issue = recordDamage($u, $hid, $iid, $qty, $place, $at, $notes, $serial);
                 db()->commit();
                 if ($issue['status'] === 'pending') {
                     notifyIssue('damage_reported', $issue, $u);
@@ -872,9 +894,9 @@ try {
                 out(['ok' => true, 'issue' => shapeIssue($issue)]);
             }
             $status = ['transfer' => 'pending', 'repair' => 'at_repair'][$kind];
-            q("INSERT INTO ha_issues (kind, status, hostel_id, to_hostel_id, item_id, qty, place, repair_type, at, expected_at, notes, created_by, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [
-                $kind, $status, $hid, $kind === 'transfer' ? $to : null, $iid, $qty, $kind === 'transfer' ? '' : $place, $rtype, $at,
+            q("INSERT INTO ha_issues (kind, status, hostel_id, to_hostel_id, item_id, qty, serial_no, place, repair_type, at, expected_at, notes, created_by, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [
+                $kind, $status, $hid, $kind === 'transfer' ? $to : null, $iid, $qty, $serial, $kind === 'transfer' ? '' : $place, $rtype, $at,
                 $kind === 'repair' ? dateOr($b['expectedAt'] ?? '', null) : null, $notes, $u['id'], nowMs(),
             ]);
             $issueId = (int) db()->lastInsertId();
@@ -924,6 +946,10 @@ try {
                 $common = ['item_id' => (int) $i['item_id'], 'qty' => $recvQty, 'issue_id' => (int) $i['id'], 'at' => today(), 'notes' => $i['notes']];
                 addTxn($common + ['hostel_id' => (int) $i['hostel_id'], 'kind' => 'transfer_out', 'dir' => -1, 'other_hostel_id' => (int) $i['to_hostel_id']], $u);
                 addTxn($common + ['hostel_id' => (int) $i['to_hostel_id'], 'kind' => 'transfer_in', 'dir' => 1, 'other_hostel_id' => (int) $i['hostel_id']], $u);
+                // A warranty piece takes its warranty with it.
+                if (($i['serial_no'] ?? '') !== '') {
+                    q("UPDATE ha_warranties SET hostel_id = ? WHERE item_id = ? AND hostel_id = ? AND warranty_no = ?", [(int) $i['to_hostel_id'], (int) $i['item_id'], (int) $i['hostel_id'], $i['serial_no']]);
+                }
             }
             $status = $recvQty === 0 ? 'rejected' : ($recvQty < (int) $i['qty'] ? 'short' : 'received');
             q("UPDATE ha_issues SET status=?, received_qty=?, decided_by=?, decided_at=?, decision_note=? WHERE id=?", [$status, $recvQty, $u['id'], nowMs(), $note, $i['id']]);
@@ -1044,7 +1070,7 @@ try {
                 // Admin's approval like any damage report, so every column still adds up.
                 addTxn($base + ['kind' => 'repair_return', 'dir' => 1, 'qty' => $scrap, 'party' => $i['place'], 'notes' => 'Not repairable' . ($notes ? " — $notes" : '')], $u);
                 $dmg = recordDamage($u, (int) $i['hostel_id'], (int) $i['item_id'], $scrap, str($b['place'] ?? '', 160), $at,
-                    'Not repairable after repair ' . issueNo($i) . ($notes ? " — $notes" : ''));
+                    'Not repairable after repair ' . issueNo($i) . ($notes ? " — $notes" : ''), $i['serial_no'] ?? '');
             }
             $left = $outstanding - $ok - $scrap;
             q("UPDATE ha_issues SET returned_qty = returned_qty + ?, scrapped_qty = scrapped_qty + ?, status = ? WHERE id = ?", [$ok, $scrap, $left === 0 ? 'closed' : 'partly_returned', $i['id']]);

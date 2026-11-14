@@ -162,6 +162,13 @@ const inS = (id) => M.scopeSet.has(id);
 const canApprove = (hid) => M.all || (M.role === "Foundation" && inS(hid));
 const isWh = (id) => (M.H.get(id) || {}).kind === "warehouse";
 const fName = (id) => (M.F.get(id) || {}).name || "—";
+// Item name of an issue, with the Serial No. of a warranty piece: "DG BIG(221)".
+const issueItem = (i) => iName(i.itemId) + (i.serialNo ? `(${i.serialNo})` : "");
+// Serial Nos. of a warranty item at a unit / warehouse that are free to issue (not in an open entry, not written off).
+const freeSerials = (hid, iid) => {
+  const busy = new Set(S.d.issues.filter((i) => i.itemId === iid && i.serialNo && (i.status === "pending" || (i.kind === "repair" && (i.status === "at_repair" || i.status === "partly_returned")) || (i.kind === "damage" && i.status === "done"))).map((i) => i.serialNo));
+  return [...new Set(S.d.warranties.filter((w) => w.itemId === iid && w.hostelId === hid && w.warrantyNo && !busy.has(w.warrantyNo)).map((w) => w.warrantyNo))].sort(cmp);
+};
 const itemHasWarranty = (iid) => !!(M.C.get((M.I.get(iid) || {}).categoryId) || {}).warranty;
 // Units and Central Warehouses for dropdowns, grouped by Foundation (warehouse first).
 const locOpts = (ids) => S.d.hostels.filter((h) => ids.includes(h.id)).sort((a, b) => cmp(fName(a.foundationId), fName(b.foundationId)) || (b.kind === "warehouse") - (a.kind === "warehouse") || cmp(a.name, b.name)).map((h) => [h.id, h.name]);
@@ -269,7 +276,7 @@ function issueCard(i, extra = []) {
   const recv = i.kind === "transfer" && i.receivedQty != null ? [["Received", recvHtml(i)]] : [];
   return {
     tone: ISSUE_KIND[i.kind].c,
-    title: `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(iName(i.itemId))}</span>`,
+    title: `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>`,
     qty: `${nf(i.qty)} <small>${esc(iUnit(i.itemId))}</small>`,
     sub: `${esc(hName(i.hostelId))}${to ? " → " + esc(to) : ""}${i.kind === "repair" && i.repairType === "Internal" ? " (internal)" : ""}`,
     meta: `<span class="mono">${esc(i.no)}</span> · ${fmtD(i.at)} · ${esc(uName(i.createdBy))}`,
@@ -320,11 +327,11 @@ V.home = () => {
   const byH = M.multi ? S.d.hostels.filter((h) => inS(h.id)).map((h) => ({ h, n: rows.filter((r) => r.hostelId === h.id).reduce((s, r) => s + r.current, 0) })) : [];
   const maxH = Math.max(1, ...byH.map((x) => x.n));
 
-  const apprList = incoming.length ? `<ul class="list">${incoming.map((i) => `<li><div class="ic violet">${ic("move")}</div><div class="tx"><b>${esc(iName(i.itemId))} × ${nf(i.qty)} ${esc(iUnit(i.itemId))}</b><span>${esc(hName(i.hostelId))} → ${esc(hName(i.toHostelId))} · ${fmtD(i.at)} · <span class="mono">${esc(i.no)}</span></span></div><div class="rt acts">${canWriteHostel(i.toHostelId) ? `<button class="btn sm pri" data-act="receive" data-id="${i.id}">${ic("edit")}Update</button>` : ""}</div></li>`).join("")}</ul>`
+  const apprList = incoming.length ? `<ul class="list">${incoming.map((i) => `<li><div class="ic violet">${ic("move")}</div><div class="tx"><b>${esc(issueItem(i))} × ${nf(i.qty)} ${esc(iUnit(i.itemId))}</b><span>${esc(hName(i.hostelId))} → ${esc(hName(i.toHostelId))} · ${fmtD(i.at)} · <span class="mono">${esc(i.no)}</span></span></div><div class="rt acts">${canWriteHostel(i.toHostelId) ? `<button class="btn sm pri" data-act="receive" data-id="${i.id}">${ic("edit")}Update</button>` : ""}</div></li>`).join("")}</ul>`
     : `<div class="empty">${ic("check")}<div>No incoming transfers waiting to be received.</div></div>`;
   const recentList = recent.length ? `<ul class="list">${recent.map((t) => { const k = KIND[t.kind]; const icn = { in: "in", transfer_in: "move", transfer_out: "move", repair_out: "wrench", repair_return: "wrench", damaged: "alert" }[t.kind] || "box"; return `<li><div class="ic ${k.c === "blue" ? "blue" : k.c}">${ic(icn)}</div><div class="tx"><b>${esc(iName(t.itemId))}</b><span>${esc(k.l)} · ${esc(hName(t.hostelId))}${t.otherHostelId ? (t.dir > 0 ? " from " : " to ") + esc(hName(t.otherHostelId)) : ""} · ${fmtD(t.at)}</span></div><div class="rt ${t.dir > 0 ? "qin" : "qout"}">${t.dir > 0 ? "+" : "−"}${nf(t.qty)}</div></li>`; }).join("")}</ul>`
     : `<div class="empty">${ic("inbox")}<div>No movements yet.</div></div>`;
-  const repList = repairs.length ? `<ul class="list">${repairs.map((i) => `<li><div class="ic amber">${ic("wrench")}</div><div class="tx"><b>${esc(iName(i.itemId))} × ${nf(outstanding(i))}</b><span>${esc(hName(i.hostelId))}${i.place ? " · " + esc(i.place) : ""} · sent ${fmtD(i.at)}</span></div><div class="rt">${isOverdue(i) ? `<span class="b red">Overdue</span>` : i.expectedAt ? `<span class="b">Due ${fmtD(i.expectedAt)}</span>` : ""}</div></li>`).join("")}</ul>`
+  const repList = repairs.length ? `<ul class="list">${repairs.map((i) => `<li><div class="ic amber">${ic("wrench")}</div><div class="tx"><b>${esc(issueItem(i))} × ${nf(outstanding(i))}</b><span>${esc(hName(i.hostelId))}${i.place ? " · " + esc(i.place) : ""} · sent ${fmtD(i.at)}</span></div><div class="rt">${isOverdue(i) ? `<span class="b red">Overdue</span>` : i.expectedAt ? `<span class="b">Due ${fmtD(i.expectedAt)}</span>` : ""}</div></li>`).join("")}</ul>`
     : `<div class="empty">${ic("wrench")}<div>Nothing is at repair.</div></div>`;
   const warList = warr.length ? `<ul class="list">${warr.map((w) => `<li><div class="ic ${w.daysLeft < 0 ? "red" : "amber"}">${ic("shield")}</div><div class="tx"><b>${esc(w.title || iName(w.itemId))}</b><span>${esc(w.hostelId ? hName(w.hostelId) : "All units")} · ${esc(w.warrantyNo || "No number")}</span></div><div class="rt">${daysBadge(w.daysLeft)}</div></li>`).join("")}</ul>`
     : `<div class="empty">${ic("shield")}<div>No warranties expire in the next 90 days.</div></div>`;
@@ -549,7 +556,7 @@ function issueCols(withActs = true) {
     { h: "Type", t: (i) => ISSUE_KIND[i.kind].l, html: (i) => badge(ISSUE_KIND[i.kind]) },
     { h: "Repair type", t: (i) => (i.kind === "repair" ? i.repairType || "External" : ""), html: (i) => (i.kind === "repair" ? `<span class="b ${i.repairType === "Internal" ? "cyan" : "violet"}">${esc(i.repairType || "External")}</span>` : `<span class="dim">—</span>`) },
     { h: "From", t: (i) => hName(i.hostelId), cls: "nw" },
-    { h: "Item", t: (i) => iName(i.itemId), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(iName(i.itemId))}</span>` },
+    { h: "Item", t: (i) => issueItem(i), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>` },
     { h: "Qty", t: (i) => i.qty, num: 1, html: (i) => `<b>${nf(i.qty)}</b> <span class="dim">${esc(iUnit(i.itemId))}</span>` },
     { h: "Received", t: (i) => (i.kind === "transfer" && i.receivedQty != null ? i.receivedQty : ""), num: 1, html: recvHtml },
     { h: "To / sent to", t: (i) => (i.kind === "transfer" ? hName(i.toHostelId) : i.place || ""), cls: "nw" },
@@ -587,7 +594,7 @@ function issueActs(i) {
 V.issues = () => {
   const f = fv("issues");
   const base = S.d.issues.filter((i) => (!f.st || i.status === f.st) && (!f.h || i.hostelId === +f.h || i.toHostelId === +f.h) && inRange(i.at, f))
-    .filter((i) => match(f.q, i.no, iName(i.itemId), hName(i.hostelId), i.toHostelId ? hName(i.toHostelId) : "", i.place, i.notes));
+    .filter((i) => match(f.q, i.no, issueItem(i), hName(i.hostelId), i.toHostelId ? hName(i.toHostelId) : "", i.place, i.notes));
   const rows = base.filter((i) => !f.kind || i.kind === f.kind);
   const n = (k) => rows.filter((i) => i.kind === k).length;
   const nb = (k) => base.filter((i) => !k || i.kind === k).length;
@@ -625,14 +632,14 @@ function approvalsView(key) {
   const all = S.d.issues.filter((i) => i.kind === "transfer");
   const pending = all.filter((i) => i.status === "pending");
   let rows = A.show === "in" ? M.incoming : A.show === "out" ? M.outgoing : A.show === "pending" ? pending : all;
-  rows = rows.filter((i) => (!f.st || i.status === f.st || (f.st === "received" && i.status === "approved")) && (!f.h || i.hostelId === +f.h || i.toHostelId === +f.h) && inRange(i.at, f) && match(f.q, i.no, iName(i.itemId), hName(i.hostelId), hName(i.toHostelId), i.notes, i.decisionNote));
+  rows = rows.filter((i) => (!f.st || i.status === f.st || (f.st === "received" && i.status === "approved")) && (!f.h || i.hostelId === +f.h || i.toHostelId === +f.h) && inRange(i.at, f) && match(f.q, i.no, issueItem(i), hName(i.hostelId), hName(i.toHostelId), i.notes, i.decisionNote));
   const short = (i) => (i.receivedQty == null ? "" : i.qty - i.receivedQty);
   const cols = [
     { h: "No.", t: (i) => i.no, html: (i) => `<span class="mono">${esc(i.no)}</span>`, cls: "nw" },
     { h: "Sent on", t: (i) => i.at, html: (i) => fmtD(i.at), cls: "nw" },
     { h: "From", t: (i) => hName(i.hostelId), cls: "nw" },
     { h: "To", t: (i) => hName(i.toHostelId), cls: "nw" },
-    { h: "Item", t: (i) => iName(i.itemId), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.toHostelId}" data-i="${i.itemId}">${esc(iName(i.itemId))}</span>` },
+    { h: "Item", t: (i) => issueItem(i), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.toHostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>` },
     { h: "UoM", t: (i) => iUnit(i.itemId), cls: "dim" },
     { h: "Send qty", t: (i) => i.qty, num: 1, html: (i) => `<b>${nf(i.qty)}</b>` },
     { h: "Received qty", t: (i) => i.receivedQty ?? "", num: 1, html: recvHtml },
@@ -660,12 +667,12 @@ V.damage = () => {
   const f = fv("damage");
   const rows = M.dmgPending
     .filter((i) => (!f.h || i.hostelId === +f.h) && inRange(i.at, f))
-    .filter((i) => match(f.q, i.no, iName(i.itemId), hName(i.hostelId), i.place, i.notes, i.decisionNote));
+    .filter((i) => match(f.q, i.no, issueItem(i), hName(i.hostelId), i.place, i.notes, i.decisionNote));
   const cols = [
     { h: "No.", t: (i) => i.no, html: (i) => `<span class="mono">${esc(i.no)}</span>`, cls: "nw" },
     { h: "Date", t: (i) => i.at, html: (i) => fmtD(i.at), cls: "nw" },
     { h: "Unit", t: (i) => hName(i.hostelId), cls: "nw" },
-    { h: "Item", t: (i) => iName(i.itemId), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(iName(i.itemId))}</span>` },
+    { h: "Item", t: (i) => issueItem(i), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>` },
     { h: "UoM", t: (i) => iUnit(i.itemId), cls: "dim" },
     { h: "Reported qty", t: (i) => i.qty, num: 1, html: (i) => `<b>${nf(i.qty)}</b>` },
     { h: "Approved qty", t: (i) => i.receivedQty ?? "", num: 1, html: (i) => (i.receivedQty == null ? `<span class="dim">—</span>` : i.receivedQty < i.qty ? `<span class="qout">${nf(i.receivedQty)}</span>` : nf(i.receivedQty)) },
@@ -690,7 +697,7 @@ function damageDecideForm(id, approve) {
   const u = iUnit(i.itemId);
   if (approve) {
     openForm({
-      title: "Approve damage", sub: `${esc(iName(i.itemId))} · ${esc(hName(i.hostelId))}`,
+      title: "Approve damage", sub: `${esc(issueItem(i))} · ${esc(hName(i.hostelId))}`,
       fields: [{ k: "reported", l: "Reported qty", type: "text", half: 1, val: String(i.qty), ro: 1 },
         { k: "qty", l: "Approved qty", type: "number", req: 1, half: 1, val: String(i.qty),
           help: (v) => { const q = +v.qty; if (v.qty === "" || isNaN(q)) return ""; if (q > i.qty) return { t: `Can't be more than ${nf(i.qty)}`, c: "warn" }; if (q < i.qty && q > 0) return { t: `${nf(i.qty - q)} stay in stock`, c: "warn" }; return ""; } },
@@ -700,7 +707,7 @@ function damageDecideForm(id, approve) {
     });
   } else {
     openForm({
-      title: "Reject damage", sub: `${esc(iName(i.itemId))} · ${esc(hName(i.hostelId))}`, danger: true,
+      title: "Reject damage", sub: `${esc(issueItem(i))} · ${esc(hName(i.hostelId))}`, danger: true,
       fields: [{ k: "reported", l: "Reported qty", type: "text", val: `${nf(i.qty)} ${u}`, ro: 1 }, { k: "note", l: "Reason", type: "textarea", req: 1, ph: "Tell them why" }],
       submit: "Reject",
       onSubmit: async (v) => { await api("damage.decide", { id, decision: "reject", note: v.note }); return `${i.no} rejected`; },
@@ -715,13 +722,13 @@ function repairsView(key, pendingOnly) {
   const st = pendingOnly ? f.st || "open" : f.st ?? "";
   const rows = S.d.issues.filter((i) => i.kind === "repair" && i.status !== "void")
     .filter((i) => st === "" || (st === "open" ? outstanding(i) > 0 && i.status !== "closed" : st === "overdue" ? isOverdue(i) : i.status === "closed"))
-    .filter((i) => (!f.h || i.hostelId === +f.h) && (!f.rt || (i.repairType || "External") === f.rt) && inRange(i.at, f) && match(f.q, i.no, iName(i.itemId), hName(i.hostelId), i.place, i.notes));
+    .filter((i) => (!f.h || i.hostelId === +f.h) && (!f.rt || (i.repairType || "External") === f.rt) && inRange(i.at, f) && match(f.q, i.no, issueItem(i), hName(i.hostelId), i.place, i.notes));
   const open = M.openRepairs;
   const cols = [
     { h: "No.", t: (i) => i.no, html: (i) => `<span class="mono">${esc(i.no)}</span>`, cls: "nw" },
     { h: "Sent on", t: (i) => i.at, html: (i) => fmtD(i.at), cls: "nw" },
     { h: "Unit", t: (i) => hName(i.hostelId), cls: "nw" },
-    { h: "Item", t: (i) => iName(i.itemId), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(iName(i.itemId))}</span>` },
+    { h: "Item", t: (i) => issueItem(i), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>` },
     { h: "Repair type", t: (i) => i.repairType || "External", html: (i) => `<span class="b ${i.repairType === "Internal" ? "cyan" : "violet"}">${esc(i.repairType || "External")}</span>` },
     { h: "Repairer", t: (i) => i.place || "", cls: "nw" },
     { h: "Sent", t: (i) => i.qty, num: 1 },
@@ -1278,6 +1285,7 @@ function issueForm(kind = "transfer") {
       { k: "hostelId", l: "From", type: "select", req: 1, opts: () => hs, val: String(startH), show: () => hs.length > 1 },
       { k: "itemId", l: "Item", type: "select", blank: "— Choose item —", req: 1, opts: (v) => groupedItems(itemsFor(v.hostelId)),
         help: (v) => (itemsFor(v.hostelId).length ? (v.itemId ? { t: `Available to issue: <b>${nf(available(+v.hostelId, +v.itemId))}</b> ${esc(iUnit(+v.itemId))}`, c: "good" } : "") : { t: "Nothing in stock here to issue yet.", c: "warn" }) },
+      { k: "serialNo", l: "Serial No.", type: "select", req: 1, blank: "— Choose Serial No. —", show: (v) => itemHasWarranty(+v.itemId) && freeSerials(+v.hostelId, +v.itemId).length > 0, opts: (v) => freeSerials(+v.hostelId, +v.itemId).map((x) => [x, x]) },
       { k: "qty", l: "Quantity", type: "number", req: 1, half: 1, ro: (v) => itemHasWarranty(+v.itemId),
         help: (v) => (itemHasWarranty(+v.itemId) ? { t: "Warranty item: issued one piece at a time." } : v.qty && v.itemId && +v.qty > available(+v.hostelId, +v.itemId) ? { t: "More than available", c: "warn" } : "") },
       { k: "at", l: "Date", type: "date", req: 1, val: today(), half: 1 },
@@ -1289,10 +1297,10 @@ function issueForm(kind = "transfer") {
       { k: "dplace", l: "Sent to after damage", type: "select", blank: "— Choose —", req: 1, show: (v) => v.kind === "damage", opts: () => S.d.damagePlaces.map((p) => [p.name, p.name]) },
       { k: "notes", l: "Notes", type: "textarea", ph: "Reason, condition, bill…" },
     ],
-    onChange: (v, k) => { if (k === "hostelId") { v.itemId = ""; v.toHostelId = ""; } if (k === "itemId" && itemHasWarranty(+v.itemId)) v.qty = "1"; },
+    onChange: (v, k) => { if (k === "hostelId") { v.itemId = ""; v.toHostelId = ""; v.serialNo = ""; } if (k === "itemId") { v.serialNo = ""; if (itemHasWarranty(+v.itemId)) v.qty = "1"; } },
     submit: "Issue",
     onSubmit: async (v) => {
-      const r = await api("issue.create", { kind: v.kind, hostelId: +v.hostelId, itemId: +v.itemId, qty: +v.qty, at: v.at, toHostelId: v.toHostelId ? +v.toHostelId : null, place: v.kind === "damage" ? v.dplace : v.place, repairType: v.repairType, expectedAt: v.expectedAt, notes: v.notes });
+      const r = await api("issue.create", { kind: v.kind, hostelId: +v.hostelId, itemId: +v.itemId, qty: +v.qty, at: v.at, toHostelId: v.toHostelId ? +v.toHostelId : null, place: v.kind === "damage" ? v.dplace : v.place, serialNo: itemHasWarranty(+v.itemId) && freeSerials(+v.hostelId, +v.itemId).length ? v.serialNo : "", repairType: v.repairType, expectedAt: v.expectedAt, notes: v.notes });
       return v.kind === "transfer" ? `${r.issue.no} sent to ${hName(+v.toHostelId)} for approval` : v.kind === "repair" ? `${r.issue.no}: sent for repair` : `${r.issue.no}: sent for approval (Approvals → Damage)`;
     },
   });
@@ -1304,7 +1312,7 @@ function receiveForm(id) {
   if (!i) return;
   const u = iUnit(i.itemId);
   openForm({
-    title: "Update received quantity", sub: `${esc(iName(i.itemId))} · ${esc(hName(i.hostelId))} → ${esc(hName(i.toHostelId))}`,
+    title: "Update received quantity", sub: `${esc(issueItem(i))} · ${esc(hName(i.hostelId))} → ${esc(hName(i.toHostelId))}`,
     fields: [
       { k: "sent", l: "Send qty", type: "text", half: 1, val: String(i.qty), ro: 1 },
       { k: "receivedQty", l: "Received qty", type: "number", half: 1, req: 1, val: String(i.qty),
@@ -1327,7 +1335,7 @@ function returnForm(id) {
   if (!i) return;
   const out = outstanding(i);
   openForm({
-    title: "Record return from repair", sub: `${esc(iName(i.itemId))} · ${esc(hName(i.hostelId))}`,
+    title: "Record return from repair", sub: `${esc(issueItem(i))} · ${esc(hName(i.hostelId))}`,
     fields: [
       { k: "out", l: "Still at repair", type: "text", val: `${nf(out)} ${iUnit(i.itemId)}`, ro: 1 },
       { k: "okQty", l: "Repaired and returned", type: "number", half: 1, val: String(out), help: "Goes back into stock." },
@@ -1413,7 +1421,7 @@ const ACT = {
     const i = S.d.issues.find((x) => x.id === +el.dataset.id);
     const moved = i.kind === "transfer" ? (i.receivedQty ? `${esc(hName(i.toHostelId))} will go down by ${nf(i.receivedQty)} and ${esc(hName(i.hostelId))} back up by ${nf(i.receivedQty)}.` : "No stock has moved for it.")
       : `All its stock entries are removed, so ${esc(hName(i.hostelId))}'s stock goes back to how it was before this was entered.`;
-    if (await confirmBox(`Delete ${i.no}?`, `<b>${esc(iName(i.itemId))} × ${nf(i.qty)}</b> (${esc(ISSUE_KIND[i.kind].l.toLowerCase())}). ${moved} This can't be undone.`, "Delete", true)) await run(() => api("issue.delete", { id: i.id }), `${i.no} deleted`);
+    if (await confirmBox(`Delete ${i.no}?`, `<b>${esc(issueItem(i))} × ${nf(i.qty)}</b> (${esc(ISSUE_KIND[i.kind].l.toLowerCase())}). ${moved} This can't be undone.`, "Delete", true)) await run(() => api("issue.delete", { id: i.id }), `${i.no} deleted`);
   },
   return: (el) => returnForm(+el.dataset.id),
   deltxn: async (el) => { if (await confirmBox("Delete this stock entry?", "Use this to correct a wrong opening or received entry.", "Delete", true)) await run(() => api("txn.delete", { id: +el.dataset.id }), "Entry deleted"); },

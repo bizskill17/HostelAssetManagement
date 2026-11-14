@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 /** Name of a Foundation's Central Warehouse (kept in step when the Foundation is renamed). */
 function warehouseName(string $foundation): string
@@ -156,6 +156,10 @@ function ensureSchema(PDO $db): void
     }
     if (!$col('ha_warranties', 'txn_id')) {
         $db->exec("ALTER TABLE ha_warranties ADD COLUMN txn_id BIGINT NULL AFTER item_id");
+    }
+    // v7: a warranty piece issued from stock carries its Serial No.
+    if (!$col('ha_issues', 'serial_no')) {
+        $db->exec("ALTER TABLE ha_issues ADD COLUMN serial_no VARCHAR(80) NOT NULL DEFAULT '' AFTER qty");
     }
     // Existing hostels go under one Foundation (renamed later in Masters → Foundations).
     if ((int) $db->query("SELECT COUNT(*) FROM ha_foundations")->fetchColumn() === 0) {
