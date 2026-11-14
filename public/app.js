@@ -343,9 +343,9 @@ V.home = () => {
 
   return head("Dashboard", `${esc(scopeText())} · ${fmtD(today())}`)
     + stats([
-      { v: nf(M.incoming.length), l: "Transfer Approval", tone: M.incoming.length ? "amber" : "slate", go: "transfer" },
-      { v: nf(M.dmgPending.length), l: "Damage Approval", tone: M.dmgPending.length ? "red" : "slate", go: "damage" },
-      { v: nf(atRep), l: overdue ? `At Repair · ${overdue} overdue` : "At Repair", tone: overdue ? "red" : "amber", go: "repairs" },
+      { v: nf(M.incoming.length), l: "Transfer Approval", tone: M.incoming.length ? "amber" : "slate", go: "issues?transfer" },
+      { v: nf(M.dmgPending.length), l: "Damage Approval", tone: M.dmgPending.length ? "red" : "slate", go: "issues?damage" },
+      { v: nf(atRep), l: overdue ? `At Repair · ${overdue} overdue` : "At Repair", tone: overdue ? "red" : "amber", go: "issues?repair" },
       { v: nf(dmgMonth), l: "Damage This Month", tone: "red", go: "damaged" },
       { v: nf(M.exp30), l: "Warranties expiring in 30 days", tone: M.exp30 ? "red" : "green", go: "warranties" },
     ], true)
@@ -595,15 +595,26 @@ function issueActs(i) {
     : ab("delissue", i.id, "trash", "Delete", "red"));
   return `<div class="rowacts">${b.join("")}</div>`;
 }
+// Approval choices on Out Register: what is waiting, scoped to this login (the server only sends their data).
+const APPR = {
+  transfer: { l: "Transfer", i: "move", c: "violet", list: () => M.incoming, sub: () => "Waiting for received qty" },
+  damage: { l: "Damage", i: "alert", c: "red", list: () => M.dmgPending, sub: () => "Waiting for approval" },
+  repair: { l: "Repair", i: "wrench", c: "amber", list: () => M.openRepairs, sub: () => `Still at repair · ${M.openRepairs.filter(isOverdue).length} overdue` },
+};
 V.issues = () => {
   const f = fv("issues");
   const base = S.d.issues.filter((i) => (!f.st || i.status === f.st) && (!f.h || i.hostelId === +f.h || i.toHostelId === +f.h) && inRange(i.at, f))
     .filter((i) => match(f.q, i.no, issueItem(i), hName(i.hostelId), i.toHostelId ? hName(i.toHostelId) : "", i.place, i.notes));
-  const rows = base.filter((i) => !f.kind || i.kind === f.kind);
+  // Approval: only what is waiting (for this login's units / warehouses), one kind at a time.
+  const ap = APPR[f.appr];
+  const pend = new Set(ap ? ap.list().map((i) => i.id) : []);
+  const rows = base.filter((i) => (ap ? pend.has(i.id) : !f.kind || i.kind === f.kind));
   const n = (k) => rows.filter((i) => i.kind === k).length;
   const nb = (k) => base.filter((i) => !k || i.kind === k).length;
-  const tabs = `<div class="segtabs coltabs" role="tablist">${[["", "All", "list"], ["transfer", "Transfer", "move"], ["repair", "Repair", "wrench"], ["damage", "Damage", "alert"]]
-    .map(([k, l, icn]) => `<button type="button" role="tab" class="tk-${k || "all"}${(f.kind || "") === k ? " on" : ""}" aria-selected="${(f.kind || "") === k}" data-act="ftab" data-key="issues" data-k="kind" data-v="${k}">${ic(icn)}${l}<span class="n">${nb(k)}</span></button>`).join("")}</div>`;
+  const apTotal = Object.values(APPR).reduce((s, a) => s + a.list().length, 0);
+  const apBtn = `<div class="apwrap"><button type="button" class="tk-appr${ap ? " on" : ""}" data-act="apprmenu" aria-haspopup="true" aria-expanded="${!!S.apprOpen}">${ic("check")}${ap ? `Approval: ${ap.l}` : "Approval"}<span class="n${apTotal ? " hot" : ""}">${ap ? pend.size : apTotal}</span>${ic("chev")}</button>${S.apprOpen ? `<div class="apmenu" role="menu">${Object.entries(APPR).map(([k, a]) => `<button type="button" role="menuitem" class="apit${f.appr === k ? " on" : ""}" data-act="appr" data-v="${k}"><span class="aico t-${a.c}">${ic(a.i)}</span><span class="apt"><b>${a.l}</b><span>${esc(a.sub())}</span></span><span class="apn t-${a.c}">${a.list().length}</span></button>`).join("")}</div>` : ""}</div>`;
+  const tabs = `<div class="segtabs coltabs" role="tablist">${apBtn}${[["", "All", "list"], ["transfer", "Transfer", "move"], ["repair", "Repair", "wrench"], ["damage", "Damage", "alert"]]
+    .map(([k, l, icn]) => `<button type="button" role="tab" class="tk-${k || "all"}${!ap && (f.kind || "") === k ? " on" : ""}" aria-selected="${!ap && (f.kind || "") === k}" data-act="ftab" data-key="issues" data-k="kind" data-v="${k}">${ic(icn)}${l}<span class="n">${nb(k)}</span></button>`).join("")}</div>`;
   return head("Out Register", "Every transfer, repair and damage entry", `${csvBtn("issues")}<button class="btn pri" data-act="issue">${ic("plus")}<span class="l">Issue Asset</span></button>`)
     + stats([
       { v: nf(rows.length), l: "Issues" },
@@ -1432,7 +1443,9 @@ const ACT = {
   dmgno: (el) => damageDecideForm(+el.dataset.id, false),
   sortdir: (el) => { const st = S.sort[el.dataset.key]; if (st) st.dir = -st.dir; if (el.dataset.key === "hist") drawHist(); else render(); },
   page: (el) => { S.page[el.dataset.key] = +el.dataset.p; render(); window.scrollTo({ top: 0, behavior: "smooth" }); },
-  ftab: (el) => { fv(el.dataset.key)[el.dataset.k] = el.dataset.v; S.page[el.dataset.key] = 0; render(); },
+  ftab: (el) => { const f = fv(el.dataset.key); f[el.dataset.k] = el.dataset.v; f.appr = ""; S.apprOpen = false; S.page[el.dataset.key] = 0; render(); },
+  apprmenu: () => { S.apprOpen = !S.apprOpen; render(); },
+  appr: (el) => { const f = fv("issues"); f.appr = el.dataset.v; f.kind = ""; S.apprOpen = false; S.page.issues = 0; render(); },
   clearf: (el) => { S.f[el.dataset.key] = {}; S.page[el.dataset.key] = 0; render(); },
   ledger: (el) => historyPopup(+el.dataset.i, el.dataset.h ? +el.dataset.h : M.multi ? 0 : M.scopeH[0]),
   closehist: () => { S.hist = null; closeDlg(); },
@@ -1515,9 +1528,9 @@ function renderShell() {
   const sub = M.all ? S.d.org || "" : userScope(S.me);
   $("#orgLine").textContent = sub;
   $("#orgLine").hidden = !sub;
-  const inc = M.incoming.length;
-  const b = (v, l, i) => `<a href="#${v}" class="${S.view === v ? "on" : ""}"><span class="ico">${ic(i)}</span>${l}${v === "transfer" && inc ? `<span class="dot">${inc}</span>` : ""}</a>`;
-  $("#bnav").innerHTML = b("home", "Home", "home") + b("inventory", "Inventory", "box") + `<a class="mid" data-act="issue"><span class="c">${ic("plus")}</span>Issue</a>` + b("transfer", "Approvals", "check") + `<a data-act="menu"><span class="ico">${ic("menu")}</span>More</a>`;
+  const inc = M.incoming.length + M.dmgPending.length;
+  const b = (v, l, i) => `<a href="#${v}" class="${S.view === v ? "on" : ""}"><span class="ico">${ic(i)}</span>${l}${v === "issues?approvals" && inc ? `<span class="dot">${inc}</span>` : ""}</a>`;
+  $("#bnav").innerHTML = b("home", "Home", "home") + b("inventory", "Inventory", "box") + `<a class="mid" data-act="issue"><span class="c">${ic("plus")}</span>Issue</a>` + b("issues?approvals", "Approvals", "check") + `<a data-act="menu"><span class="ico">${ic("menu")}</span>More</a>`;
   const nav = NAV.find((n) => n.v === S.view);
   $("#topTitle").textContent = M.all ? S.d.org || "Hostel Assets" : userScope(S.me);
 }
@@ -1545,13 +1558,16 @@ function render() {
 function go(v) { if (location.hash.slice(1) === v) { S.view = v; render(); } else location.hash = v; }
 function route() {
   let h = location.hash.slice(1) || "home";
-  const legacy = { ledger: "inventory", approvals: "transfer", "approvals?in": "transfer", "approvals?out": "transfer", "approvals?all": "transfers", receive: "transfer", sent: "transfer" };
+  // The old approval pages now open Out Register with the Approval choice set.
+  const legacy = { ledger: "inventory", approvals: "issues?approvals", "approvals?in": "issues?transfer", "approvals?out": "issues?transfer", "approvals?all": "transfers", receive: "issues?transfer", sent: "issues?transfer",
+    transfer: "issues?transfer", damage: "issues?damage", repairs: "issues?repair", "repairs?overdue": "issues?repair" };
   if (legacy[h]) { history.replaceState(null, "", "#" + legacy[h]); h = legacy[h]; }
   const [v, arg] = h.split("?");
   const nav = NAV.find((n) => n.v === v);
   S.view = V[v] && (!nav || !nav.admin || M.admin) ? v : "home";
   if (arg && (S.view === "repairs" || S.view === "allrepairs")) S.f[S.view] = { st: arg };
   if (arg && S.view === "warranties") S.f.warranties = { st: arg };
+  if (arg && S.view === "issues") { S.f.issues = { appr: APPR[arg] ? arg : "" }; S.apprOpen = arg === "approvals"; }
   if (arg) history.replaceState(null, "", "#" + S.view);
   document.body.classList.remove("drawer");
   render();
@@ -1561,6 +1577,8 @@ async function reload() { S.d = await api("data"); S.me = S.d.me; derive(); rend
 
 /* ---------- events ---------- */
 document.addEventListener("click", (e) => {
+  // A click anywhere outside the Approval menu closes it.
+  if (S.apprOpen && !e.target.closest(".apwrap")) { S.apprOpen = false; render(); }
   const a = e.target.closest("[data-act]");
   if (a) { e.preventDefault(); const fn = ACT[a.dataset.act]; if (fn) fn(a); return; }
   const th = e.target.closest("th[data-sort]");
