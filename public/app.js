@@ -57,6 +57,10 @@ const P = {
 };
 const ic = (n, cls = "i") => `<svg class="${cls}" viewBox="0 0 24 24">${P[n] || ""}</svg>`;
 
+// Title Case for form labels, titles and buttons: "unit name" → "Unit Name" (small joining words stay lower case).
+const SMALL = new Set(["a", "an", "and", "or", "of", "to", "by", "for", "at", "the", "as", "per", "with"]);
+const tc = (t) => String(t ?? "").replace(/[A-Za-z][\w'’]*/g, (w, i) => (i > 0 && SMALL.has(w.toLowerCase()) && !/^[A-Z]{2,}/.test(w) ? w.toLowerCase() : w[0].toUpperCase() + w.slice(1)));
+
 /* ---------- state ---------- */
 const S = { me: null, d: null, view: "home", f: {}, sort: {}, page: {}, ledger: { h: "", i: "" } };
 const M = {}; // derived lookups and totals
@@ -389,7 +393,7 @@ V.inventory = () => {
     { h: "Damage pending", t: (r) => r.pendingDmg || "", num: 1, cls: "dim" },
     { h: "Transfer pending", t: (r) => (r.pendingOut ? `−${r.pendingOut}` : "") + (r.pendingOut && r.pendingIn ? " / " : "") + (r.pendingIn ? `+${r.pendingIn}` : ""), cls: "dim nw", nosort: 1 },
   ];
-  return head("Inventory", `${esc(combine ? "All units combined" : scopeText())} · click an item to see its history`, `${csvBtn("inventory")}<button class="btn pri" data-act="issue">${ic("plus")}<span class="l">Issue asset</span></button>`)
+  return head("Inventory", `${esc(combine ? "All units combined" : scopeText())} · click an item to see its history`, `${csvBtn("inventory")}<button class="btn pri" data-act="issue">${ic("plus")}<span class="l">Issue Asset</span></button>`)
     + stats([
       { v: nf(rows.length), l: combine ? "Items" : "Unit × item lines" },
       { v: nf(sum("opening")), l: "Opening count", tone: "slate" },
@@ -531,7 +535,7 @@ V.stock = () => {
     { h: "Entered by", t: (t) => uName(t.createdBy), cls: "dim nw" },
   ];
   if (M.admin) cols.push({ h: "", t: () => "", nocsv: 1, nosort: 1, html: (t) => `<div class="rowacts">${ab("deltxn", t.id, "trash", "Delete", "red")}</div>` });
-  return head("In Register", "Purchases and opening stock at each unit and warehouse", `${csvBtn("stock")}<button class="btn" data-act="bulkup" title="Opening stock bulk upload">${ic("upload")}<span class="l">Bulk upload</span></button><button class="btn pri" data-act="stockin">${ic("plus")}<span class="l">Add stock</span></button>`)
+  return head("In Register", "Purchases and opening stock at each unit and warehouse", `${csvBtn("stock")}<button class="btn" data-act="bulkup" title="Opening stock bulk upload">${ic("upload")}<span class="l">Bulk Upload</span></button><button class="btn pri" data-act="stockin">${ic("plus")}<span class="l">Add Stock</span></button>`)
     + stats([
       { v: nf(rows.length), l: "Entries" },
       { v: nf(sum("opening")), l: "Opening quantity", tone: "slate" },
@@ -600,7 +604,7 @@ V.issues = () => {
   const nb = (k) => base.filter((i) => !k || i.kind === k).length;
   const tabs = `<div class="segtabs coltabs" role="tablist">${[["", "All", "list"], ["transfer", "Transfer", "move"], ["repair", "Repair", "wrench"], ["damage", "Damage", "alert"]]
     .map(([k, l, icn]) => `<button type="button" role="tab" class="tk-${k || "all"}${(f.kind || "") === k ? " on" : ""}" aria-selected="${(f.kind || "") === k}" data-act="ftab" data-key="issues" data-k="kind" data-v="${k}">${ic(icn)}${l}<span class="n">${nb(k)}</span></button>`).join("")}</div>`;
-  return head("Out Register", "Every transfer, repair and damage entry", `${csvBtn("issues")}<button class="btn pri" data-act="issue">${ic("plus")}<span class="l">Issue asset</span></button>`)
+  return head("Out Register", "Every transfer, repair and damage entry", `${csvBtn("issues")}<button class="btn pri" data-act="issue">${ic("plus")}<span class="l">Issue Asset</span></button>`)
     + stats([
       { v: nf(rows.length), l: "Issues" },
       { v: nf(n("transfer")), l: "Transfers", tone: "violet" },
@@ -683,7 +687,7 @@ V.damage = () => {
     { h: "Notes", t: (i) => [i.notes, i.decisionNote && "Note: " + i.decisionNote].filter(Boolean).join(" · "), cls: "wrap" },
     { h: "", t: () => "", nocsv: 1, nosort: 1, html: issueActs },
   ];
-  return head("Damage", "", `${csvBtn("damage")}<button class="btn pri" data-act="issue" data-kind="damage">${ic("plus")}<span class="l">Mark damaged</span></button>`)
+  return head("Damage", "", `${csvBtn("damage")}<button class="btn pri" data-act="issue" data-kind="damage">${ic("plus")}<span class="l">Mark Damaged</span></button>`)
     + filterBar("damage", [
       { k: "q", type: "search", ph: "Search no., item, unit or notes" },
       { k: "h", l: "Unit", opts: hostelOpts(), all: "All units", hide: !M.multi },
@@ -741,7 +745,7 @@ function repairsView(key, pendingOnly) {
     { h: "Notes", t: (i) => i.notes || "", cls: "wrap" },
     { h: "", t: () => "", nocsv: 1, nosort: 1, html: issueActs },
   ];
-  return head(pendingOnly ? "Repair" : "All Repairs", "", `${csvBtn(key)}<button class="btn pri" data-act="issue" data-kind="repair">${ic("plus")}<span class="l">Send for repair</span></button>`)
+  return head(pendingOnly ? "Repair" : "All Repairs", "", `${csvBtn(key)}<button class="btn pri" data-act="issue" data-kind="repair">${ic("plus")}<span class="l">Send for Repair</span></button>`)
     + stats([
       { v: nf(open.reduce((s, i) => s + outstanding(i), 0)), l: "Quantity at repair now", tone: "amber" },
       { v: nf(open.length), l: "Open repair jobs", tone: "cyan" },
@@ -784,7 +788,7 @@ V.damaged = () => {
     { h: "Notes", t: (t) => t.notes || "", cls: "wrap" },
     { h: "Entered by", t: (t) => uName(t.createdBy), cls: "dim nw" },
   ];
-  return head("All Damaged", "Items written off as damaged, including those not repairable", `${csvBtn("damaged")}<button class="btn pri" data-act="issue" data-kind="damage">${ic("plus")}<span class="l">Mark damaged</span></button>`)
+  return head("All Damaged", "Items written off as damaged, including those not repairable", `${csvBtn("damaged")}<button class="btn pri" data-act="issue" data-kind="damage">${ic("plus")}<span class="l">Mark Damaged</span></button>`)
     + stats([
       { v: nf(rows.length), l: "Entries" },
       { v: nf(rows.reduce((s, t) => s + t.qty, 0)), l: "Quantity damaged", tone: "red" },
@@ -822,7 +826,7 @@ V.warranties = () => {
     { h: "", t: () => "", nocsv: 1, nosort: 1, html: (w) => (canWriteHostel(w.hostelId) ? `<div class="rowacts">${ab("warranty", w.id, "edit", "Edit", "blue")}${M.admin ? ab("delwarranty", w.id, "trash", "Delete", "red") : ""}</div>` : "") },
   ];
   const inN = (a, b) => M.warr.filter((w) => w.daysLeft >= a && w.daysLeft <= b).length;
-  return head("Warranties", "Track warranties and see what is about to expire", `${csvBtn("warranties")}<button class="btn pri" data-act="warranty">${ic("plus")}<span class="l">Add warranty</span></button>`)
+  return head("Warranties", "Track warranties and see what is about to expire", `${csvBtn("warranties")}<button class="btn pri" data-act="warranty">${ic("plus")}<span class="l">Add Warranty</span></button>`)
     + stats([
       { v: nf(M.warr.length), l: "Warranties" },
       { v: nf(inN(0, 30)), l: "Expiring in 30 days", tone: "red", go: "warranties?30" },
@@ -944,8 +948,6 @@ const MASTERS = {
     ],
   },
 };
-// "measuring unit" → "Measuring Unit" for buttons and form titles.
-const tc = (t) => String(t).replace(/\b\w/g, (c) => c.toUpperCase());
 const ROLES = ["Unit", "Foundation", "Organization", "Admin"];
 const userScope = (r) => (r.role === "Admin" ? "Everything" : r.role === "Organization" ? "All foundations" : r.role === "Foundation" ? fName(r.foundationId) : hName(r.hostelId));
 const initials = (n) => String(n || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
@@ -976,16 +978,16 @@ V.settings = () => {
   return head("Settings")
     + `<div class="card" style="max-width:760px"><div class="ch"><h3>Telegram notifications</h3><span class="sub">${hostelGroups ? `Main group + ${hostelGroups} more group${hostelGroups > 1 ? "s" : ""}` : "Main group"}</span></div>
     <form id="setForm" class="db" style="padding:18px 20px">
-      <div class="fld"><label>Organization name</label><input name="orgName" value="${esc(s.orgName || "")}"></div>
-      <div class="fld"><label class="chk"><input type="checkbox" name="telegramOn" ${s.telegramOn ? "checked" : ""}> Send Telegram notifications</label></div>
-      <div class="fld half"><label>Bot token</label><input name="telegramToken" type="password" autocomplete="new-password"></div>
-      <div class="fld half"><label>Main group chat ID</label><input name="telegramChat" value="${esc(s.telegramChat)}"></div>
-      <div class="fld"><label>App address (added as a link in messages)</label><input name="appUrl" value="${esc(s.appUrl || location.origin + location.pathname.replace(/index\.html$/, ""))}"></div>
-      <div class="fld" style="border-top:1px solid var(--line2);padding-top:14px;margin-top:4px"><label>Messages to send</label>
+      <div class="fld"><label>Organization Name</label><input name="orgName" value="${esc(s.orgName || "")}"></div>
+      <div class="fld"><label class="chk"><input type="checkbox" name="telegramOn" ${s.telegramOn ? "checked" : ""}> Send Telegram Notifications</label></div>
+      <div class="fld half"><label>Bot Token</label><input name="telegramToken" type="password" autocomplete="new-password"></div>
+      <div class="fld half"><label>Main Group Chat ID</label><input name="telegramChat" value="${esc(s.telegramChat)}"></div>
+      <div class="fld"><label>App Address (Added as a Link in Messages)</label><input name="appUrl" value="${esc(s.appUrl || location.origin + location.pathname.replace(/index\.html$/, ""))}"></div>
+      <div class="fld" style="border-top:1px solid var(--line2);padding-top:14px;margin-top:4px"><label>Messages to Send</label>
         <div class="evgrid">${ev.map(([k, l]) => `<label class="chk"><input type="checkbox" name="ev_${k}" ${off.has(k) ? "" : "checked"}> ${esc(l)}</label>`).join("")}</div></div>
-      <div class="fld half"><label>Daily messages time</label><input name="dailyTime" type="time" value="${esc(s.dailyTime || "09:00")}"></div>
+      <div class="fld half"><label>Daily Messages Time</label><input name="dailyTime" type="time" value="${esc(s.dailyTime || "09:00")}"></div>
       <div class="err" id="setErr"></div>
-      <div class="fld" style="flex-direction:row;gap:8px;flex-wrap:wrap"><button class="btn pri" type="submit">Save settings</button><button class="btn" type="button" data-act="testNotify">${ic("bell")}Send a test</button><button class="btn" type="button" data-act="dailyNow">${ic("clock")}Send daily messages now</button>${s.telegramTokenSet ? `<button class="btn bad" type="button" data-act="clearToken">Remove bot token</button>` : ""}</div>
+      <div class="fld" style="flex-direction:row;gap:8px;flex-wrap:wrap"><button class="btn pri" type="submit">Save Settings</button><button class="btn" type="button" data-act="testNotify">${ic("bell")}Send a Test</button><button class="btn" type="button" data-act="dailyNow">${ic("clock")}Send Daily Messages Now</button>${s.telegramTokenSet ? `<button class="btn bad" type="button" data-act="clearToken">Remove Bot Token</button>` : ""}</div>
       <div id="testOut" class="fld"></div>
     </form></div>`;
 };
@@ -998,7 +1000,7 @@ function openForm(o) {
   if (o.values) Object.assign(vals, o.values);
   const wrap = document.createElement("div");
   wrap.className = "dlg";
-  wrap.innerHTML = `<form novalidate><div class="dh"><div><h2>${esc(o.title)}</h2>${o.sub ? `<p>${o.sub}</p>` : ""}</div><button type="button" class="iconbtn" data-close aria-label="Close">${ic("x")}</button></div><div class="db"></div><div class="df"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn ${o.danger ? "danger" : "pri"}">${esc(o.submit || "Save")}</button></div></form>`;
+  wrap.innerHTML = `<form novalidate><div class="dh"><div><h2>${esc(tc(o.title))}</h2>${o.sub ? `<p>${o.sub}</p>` : ""}</div><button type="button" class="iconbtn" data-close aria-label="Close">${ic("x")}</button></div><div class="db"></div><div class="df"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn ${o.danger ? "danger" : "pri"}">${esc(tc(o.submit || "Save"))}</button></div></form>`;
   document.body.appendChild(wrap);
   const form = $("form", wrap), body = $(".db", wrap);
   const read = () => {
@@ -1023,8 +1025,8 @@ function openForm(o) {
         if (fd.add && M.admin) ctl = `<div class="inrow">${ctl}<button type="button" class="btn addbtn" data-addfor="${fd.k}" title="${esc(fd.add.title)}" aria-label="${esc(fd.add.title)}">${ic("plus")}</button></div>`;
       }
       else if (fd.type === "textarea") ctl = `<textarea id="f_${fd.k}" name="${fd.k}">${esc(v)}</textarea>`;
-      else if (fd.type === "check") return `<div class="fld"><label class="chk"><input type="checkbox" name="${fd.k}" ${v ? "checked" : ""}> ${esc(fd.l)}</label>${helpH}</div>`;
-      else if (fd.type === "seg") ctl = `<input type="hidden" name="${fd.k}" value="${esc(v)}"><div class="seg">${fd.opts(vals).map(([ov, ol, icn]) => `<button type="button" data-seg="${fd.k}" data-v="${esc(ov)}" class="${String(ov) === String(v) ? "on" : ""}">${icn ? ic(icn) : ""}${esc(ol)}</button>`).join("")}</div>`;
+      else if (fd.type === "check") return `<div class="fld"><label class="chk"><input type="checkbox" name="${fd.k}" ${v ? "checked" : ""}> ${esc(tc(fd.l))}</label>${helpH}</div>`;
+      else if (fd.type === "seg") ctl = `<input type="hidden" name="${fd.k}" value="${esc(v)}"><div class="seg">${fd.opts(vals).map(([ov, ol, icn]) => `<button type="button" data-seg="${fd.k}" data-v="${esc(ov)}" class="${String(ov) === String(v) ? "on" : ""}">${icn ? ic(icn) : ""}${esc(tc(ol))}</button>`).join("")}</div>`;
       else ctl = `<input id="f_${fd.k}" name="${fd.k}" type="${fd.type || "text"}" value="${esc(v)}" ${fd.type === "number" ? 'min="0" step="1" inputmode="numeric"' : ""} ${(typeof fd.ro === "function" ? fd.ro(vals) : fd.ro) ? "readonly tabindex=\"-1\" style=\"background:var(--line2);font-weight:700\"" : ""} ${fd.list ? `list="l_${fd.k}"` : ""} autocomplete="${fd.type === "password" ? "new-password" : "off"}">${fd.list ? `<datalist id="l_${fd.k}">${fd.list.map((x) => `<option value="${esc(x)}">`).join("")}</datalist>` : ""}`;
       return `<div class="fld${fd.half ? " half" : ""}${bad[fd.k] ? " bad" : ""}" data-fk="${fd.k}">${lab}${ctl}${bad[fd.k] ? `<div class="ferr">${esc(bad[fd.k])}</div>` : ""}${helpH}</div>`;
     }).join("") + `<div class="err" role="alert"></div>`;
@@ -1047,7 +1049,7 @@ function openForm(o) {
   };
   // Labels and hints change with the values; update them in place so typing is never interrupted.
   const isReq = (fd) => (typeof fd.req === "function" ? fd.req(vals) : fd.req);
-  function labText(fd) { return `${esc(typeof fd.l === "function" ? fd.l(vals) : fd.l)}${isReq(fd) ? ' <span class="req">*</span>' : ""}`; }
+  function labText(fd) { return `${esc(tc(typeof fd.l === "function" ? fd.l(vals) : fd.l))}${isReq(fd) ? ' <span class="req">*</span>' : ""}`; }
   function refresh() {
     for (const fd of o.fields) {
       const h = body.querySelector(`[data-help="${fd.k}"]`);
@@ -1161,7 +1163,7 @@ function confirmBox(title, text, ok = "Confirm", danger = false) {
     closeDlg();
     const w = document.createElement("div");
     w.className = "dlg";
-    w.innerHTML = `<div class="box"><div class="dh"><div><h2>${esc(title)}</h2><p>${text}</p></div></div><div class="df"><button class="btn" data-no>Cancel</button><button class="btn ${danger ? "danger" : "pri"}" data-yes>${esc(ok)}</button></div></div>`;
+    w.innerHTML = `<div class="box"><div class="dh"><div><h2>${esc(title)}</h2><p>${text}</p></div></div><div class="df"><button class="btn" data-no>Cancel</button><button class="btn ${danger ? "danger" : "pri"}" data-yes>${esc(tc(ok))}</button></div></div>`;
     document.body.appendChild(w);
     w.addEventListener("click", (e) => { if (e.target.closest("[data-yes]")) { w.remove(); res(true); } else if (e.target.closest("[data-no]") || e.target === w) { w.remove(); res(false); } });
     setTimeout(() => $("[data-yes]", w).focus(), 30);
@@ -1227,11 +1229,11 @@ function bulkForm() {
   let rows = null;
   const w = document.createElement("div");
   w.className = "dlg";
-  w.innerHTML = `<form novalidate><div class="dh"><div><h2>Opening stock bulk upload</h2><p>Load opening stock for many items at once from a spreadsheet.</p></div><button type="button" class="iconbtn" data-close aria-label="Close">${ic("x")}</button></div>
+  w.innerHTML = `<form novalidate><div class="dh"><div><h2>Opening Stock Bulk Upload</h2><p>Load opening stock for many items at once from a spreadsheet.</p></div><button type="button" class="iconbtn" data-close aria-label="Close">${ic("x")}</button></div>
     <div class="db">
-      <div class="fld"><label>1. Download the template</label><div><button type="button" class="btn" id="bkTpl">${ic("download")}Download template</button></div>
+      <div class="fld"><label>1. Download the Template</label><div><button type="button" class="btn" id="bkTpl">${ic("download")}Download Template</button></div>
         <div class="help">Open it in Excel or Google Sheets. One row per unit and item. Unit and item names must match the app exactly. Warranty items: one row per piece, Qty 1, with its Serial No. and warranty expiry date. Save it as CSV.</div></div>
-      <div class="fld"><label for="bkFile">2. Upload the filled file (.csv)</label><input type="file" id="bkFile" accept=".csv,text/csv"></div>
+      <div class="fld"><label for="bkFile">2. Upload the Filled File (.csv)</label><input type="file" id="bkFile" accept=".csv,text/csv"></div>
       <div id="bkOut" class="fld"></div>
     </div>
     <div class="df"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn pri" id="bkGo" disabled>Import</button></div></form>`;
@@ -1755,10 +1757,10 @@ function showAuth(mode) {
   if (!a) { a = document.createElement("div"); a.id = "auth"; a.className = "auth"; document.body.appendChild(a); }
   const setup = mode === "setup";
   a.innerHTML = `<form novalidate><div class="band">${setup ? "Create the admin account" : "Hostel Asset Management"}</div><div class="body">
-    ${setup ? `<p class="lead">First-time setup. This account manages foundations, units, items and users.</p><div class="fld"><label>Your name</label><div class="iw"><input name="name" autocomplete="name"></div></div>` : ""}
+    ${setup ? `<p class="lead">First-time setup. This account manages foundations, units, items and users.</p><div class="fld"><label>Your Name</label><div class="iw"><input name="name" autocomplete="name"></div></div>` : ""}
     <div class="fld"><label>Email</label><div class="iw">${ic("mail")}<input name="email" type="email" autocomplete="username"></div></div>
     <div class="fld"><label>Password</label><div class="iw">${ic("lock")}<input name="password" type="password" autocomplete="${setup ? "new-password" : "current-password"}"><button type="button" class="eye" aria-label="Show password">${ic("eye")}</button></div></div>
-    <div class="err"></div><button class="btn pri" type="submit">${setup ? "Create account" : "Sign in"}</button></div></form>`;
+    <div class="err"></div><button class="btn pri" type="submit">${setup ? "Create Account" : "Sign In"}</button></div></form>`;
   a.hidden = false;
   const f = $("form", a);
   setTimeout(() => f.elements[setup ? "name" : "email"].focus(), 30);
