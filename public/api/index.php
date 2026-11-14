@@ -456,7 +456,9 @@ try {
             $admin = isAdmin($u);
             [$inH, $hp] = scopeSql($u, 'hostel_id');
             $res = ['me' => publicMe($u)];
-            $res['org'] = settings()['org_name'] ?? '';
+            $sv = settings();
+            $res['org'] = $sv['org_name'] ?? '';
+            $res['theme'] = in_array($sv['theme'] ?? '', ['a', 'b', 'c', 'd', 'e'], true) ? $sv['theme'] : 'e';
             $res['foundations'] = array_map(fn($r) => ['id' => (int) $r['id'], 'name' => $r['name'], 'active' => (bool) $r['active']] + ($admin ? ['tgChat' => $r['tg_chat']] : []),
                 db()->query("SELECT * FROM ha_foundations ORDER BY name")->fetchAll());
             // Every location (Units and Central Warehouses), so names show and transfers can go anywhere.
@@ -1344,6 +1346,17 @@ try {
             foreach ($set as $k => $v) {
                 $st->execute([$k, $v]);
             }
+            out(['ok' => true]);
+        }
+
+        case 'settings.theme': {
+            // The colour theme is set by an Admin and applies to every user.
+            requireAdmin();
+            $t = (string) (body()['theme'] ?? '');
+            if (!in_array($t, ['a', 'b', 'c', 'd', 'e'], true)) {
+                fail('Choose a colour theme.');
+            }
+            q("REPLACE INTO ha_settings (k, v) VALUES ('theme', ?)", [$t]);
             out(['ok' => true]);
         }
 

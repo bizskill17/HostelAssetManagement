@@ -114,8 +114,24 @@ const DMG_STATUS = { pending: { l: "Awaiting approval", c: "amber" }, done: { l:
 const issueStatus = (i) => (i.kind === "damage" ? DMG_STATUS[i.status] : STATUS[i.status]) || { l: i.status, c: "" };
 const badge = (o, fallback) => `<span class="b ${o ? o.c : ""}">${esc(o ? o.l : fallback)}</span>`;
 
+// Colour themes (Settings → Colour Theme). The CSS holds each theme's colours; charts read them from CSS variables.
+const THEMES = [["e", "Warm Earthy", "Cream, teal and terracotta", ["#f3eadb", "#fbf7f0", "#e6f4f1", "#fbe9e3", "#fdf3d8", "#f6e6ec"], "#0f766e"],
+  ["a", "Soft Pastel", "Light and airy, blue accents", ["#ffffff", "#f4f6fb", "#eef1ff", "#fff1f2", "#fff7e6", "#ecfdf5"], "#2f54eb"],
+  ["b", "Navy Sidebar", "Dark menu, white workspace", ["#0f1b3d", "#f3f5f9", "#ffffff", "#ffffff", "#ffffff", "#ffffff"], "#4f46e5"],
+  ["c", "Bold Colour", "Solid coloured tiles", ["#ffffff", "#f7f7fa", "#7c3aed", "#e11d48", "#f59e0b", "#10b981"], "#7c3aed"],
+  ["d", "Minimal Mono", "Black and white, thin lines", ["#fafafa", "#ffffff", "#ffffff", "#ffffff", "#ffffff", "#ffffff"], "#171717"]];
+function applyTheme(t) {
+  if (!THEMES.some((x) => x[0] === t)) t = "e";
+  document.documentElement.className = "th-" + t;
+  try { localStorage.setItem("ham_theme", t); } catch (_) {}
+  const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = THEMES.find((x) => x[0] === t)[4];
+}
+const cvar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const rgbOf = (hex) => { const h = hex.replace("#", ""); const f = h.length === 3 ? h.split("").map((c) => c + c).join("") : h; return [0, 2, 4].map((k) => parseInt(f.slice(k, k + 2), 16)).join(","); };
+
 function derive() {
   const d = S.d;
+  applyTheme(d.theme);
   // Roles: Admin (everything + Masters/Settings), Organization (all Foundations and Units),
   // Foundation (its Central Warehouse and Units), Unit (one Unit).
   M.role = d.me.role;
@@ -365,7 +381,7 @@ V.home = () => {
   const heat = heatmap(units.map((h) => ({ id: h.id, label: h.name, vals: weeks.map((w) => qtyOf(h.id, hmKind === "in" ? inK : outK, w.from, w.to)) })), weeks, hmKind);
   // 2. Out Register this month by type
   const mIss = S.d.issues.filter((i) => i.at >= monthStart && !["cancelled", "rejected", "void"].includes(i.status) && (inS(i.hostelId) || inS(i.toHostelId)));
-  const typeParts = [["transfer", "Transfer", "#0F766E"], ["repair", "Repair", "#A16207"], ["damage", "Damage", "#B4532A"]].map(([k, l, c]) => ({ label: l, color: c, value: mIss.filter((i) => i.kind === k).length, go: "issues" }));
+  const typeParts = [["transfer", "Transfer", cvar("--ch-tr")], ["repair", "Repair", cvar("--ch-rp")], ["damage", "Damage", cvar("--ch-dm")]].map(([k, l, c]) => ({ label: l, color: c, value: mIss.filter((i) => i.kind === k).length, go: "issues" }));
   // 3. Stock by unit / warehouse, 4. by category
   const byUnit = S.d.hostels.filter((h) => inS(h.id)).map((h) => ({ label: h.name, value: rows.filter((r) => r.hostelId === h.id).reduce((a, r) => a + r.current, 0), act: `data-act="invHostel" data-id="${h.id}"` })).sort((a, b) => b.value - a.value);
   const byCat = S.d.categories.map((c) => ({ label: c.name, value: rows.filter((r) => (M.I.get(r.itemId) || {}).categoryId === c.id).reduce((a, r) => a + r.current, 0) })).filter((x) => x.value > 0).sort((a, b) => b.value - a.value);
@@ -386,9 +402,9 @@ V.home = () => {
     + `<div class="dwide">${card(M.multi ? "Stock In and Out by Unit" : "Stock In and Out", "Last 30 days · quantity", flow)}</div>`
     + card("Out Register this month", "By type", donut(typeParts, "entries"), "issues")
     + `<div class="dfull"><div class="card dchart"><div class="ch"><h3>Weekly Stock ${hmKind === "in" ? "In" : "Out"} by Unit</h3><div class="hmtabs"><button type="button" class="${hmKind === "in" ? "on" : ""}" data-act="hmkind" data-v="in">Stock In</button><button type="button" class="${hmKind === "out" ? "on out" : ""}" data-act="hmkind" data-v="out">Stock Out</button></div></div><div class="cb">${heat}</div></div></div>`
-    + card(M.multi ? "Stock by unit" : "Current stock", "Quantity now", hbars(M.multi ? byUnit : [{ label: hName(M.scopeH[0]), value: total }], "#0F766E"), "inventory")
-    + card("Stock by category", "Quantity now", hbars(byCat, "#4D7C0F"), "inventory")
-    + card("Warranties expiring", "Next 6 months", vbars(warMonths, "#9F1239", "warranties"), "warranties")
+    + card(M.multi ? "Stock by unit" : "Current stock", "Quantity now", hbars(M.multi ? byUnit : [{ label: hName(M.scopeH[0]), value: total }], cvar("--ch-unit")), "inventory")
+    + card("Stock by category", "Quantity now", hbars(byCat, cvar("--ch-cat")), "inventory")
+    + card("Warranties expiring", "Next 6 months", vbars(warMonths, cvar("--ch-war"), "warranties"), "warranties")
     + `</div>`
     + `<div class="grid2"><div><div class="card"><div class="ch"><h3>Recent movements</h3><a href="#issues" class="sub">Out Register</a></div>${recentList}</div></div>`
     + `<div><div class="card"><div class="ch"><h3>At repair</h3><a href="#issues?repair" class="sub">Track repairs</a></div>${repList}</div></div></div>`;
@@ -398,7 +414,7 @@ V.home = () => {
 // Grouped bars: Stock In and Stock Out side by side for each unit (biggest first; the rest go into "Other").
 function unitBars(list) {
   if (!list.some((u) => u.in || u.out)) return `<div class="empty">${ic("inbox")}<div>No stock in or out in the last 30 days.</div></div>`;
-  const narrow = innerWidth < 700, maxN = narrow ? 4 : 7;
+  const narrow = innerWidth < 700, maxN = narrow ? 4 : 7, cIn = cvar("--ch-in"), cOut = cvar("--ch-out");
   if (list.length > maxN + 1) { const rest = list.slice(maxN); list = list.slice(0, maxN).concat([{ label: `Other ${rest.length}`, in: rest.reduce((a, u) => a + u.in, 0), out: rest.reduce((a, u) => a + u.out, 0) }]); }
   const W = narrow ? 340 : 640, H = narrow ? 210 : 230, L = 34, B = 30, T = 18, Rr = 4;
   const max = Math.max(1, ...list.flatMap((u) => [u.in, u.out]));
@@ -412,16 +428,16 @@ function unitBars(list) {
   const bar = (x, v, c, name, u) => { if (!v) return ""; const yy = y(v), h = H - B - yy, r = Math.min(4, h / 2, bw / 2);
     return `<path d="M${x},${H - B}v${-(h - r)}q0,-${r} ${r},-${r}h${bw - 2 * r}q${r},0 ${r},${r}v${h - r}z" fill="${c}"><title>${esc(u)} · ${name}: ${nf(v)}</title></path><text x="${x + bw / 2}" y="${yy - 4}" class="cv" text-anchor="middle">${nf(v)}</text>`; };
   const groups = list.map((u, k) => { const cx = L + k * gw + gw / 2;
-    return bar(cx - bw - 1, u.in, "#0F766E", "Stock In", u.label) + bar(cx + 1, u.out, "#B4532A", "Stock Out", u.label)
+    return bar(cx - bw - 1, u.in, cIn, "Stock In", u.label) + bar(cx + 1, u.out, cOut, "Stock Out", u.label)
       + `<text x="${cx}" y="${H - 10}" class="cl${u.id ? " lnkt" : ""}" text-anchor="middle" ${u.id ? `data-act="invHostel" data-id="${u.id}"` : ""}><title>${esc(u.label)}</title>${esc(short(u.label))}</text>`; }).join("");
   const tot = (k) => list.reduce((a, u) => a + u[k], 0);
-  return `<div class="legend"><span class="lg"><i style="background:#0F766E"></i>Stock In <b>${nf(tot("in"))}</b></span><span class="lg"><i style="background:#B4532A"></i>Stock Out <b>${nf(tot("out"))}</b></span></div><svg class="svgc" viewBox="0 0 ${W} ${H}" role="img" aria-label="Stock in and out by unit, last 30 days">${grid}<line x1="${L}" x2="${W - Rr}" y1="${H - B}" y2="${H - B}" class="ca"/>${groups}</svg>`;
+  return `<div class="legend"><span class="lg"><i style="background:${cIn}"></i>Stock In <b>${nf(tot("in"))}</b></span><span class="lg"><i style="background:${cOut}"></i>Stock Out <b>${nf(tot("out"))}</b></span></div><svg class="svgc" viewBox="0 0 ${W} ${H}" role="img" aria-label="Stock in and out by unit, last 30 days">${grid}<line x1="${L}" x2="${W - Rr}" y1="${H - B}" y2="${H - B}" class="ca"/>${groups}</svg>`;
 }
 // Heatmap: units down the side, the last 8 weeks across; darker = more quantity.
 function heatmap(rows, weeks, kind) {
   const max = Math.max(0, ...rows.flatMap((r) => r.vals));
   if (!max) return `<div class="empty">${ic("inbox")}<div>No stock ${kind} in the last 8 weeks.</div></div>`;
-  const rgb = kind === "in" ? "15,118,110" : "180,83,42", ink = kind === "in" ? "#085041" : "#7a2f12";
+  const rgb = rgbOf(cvar(kind === "in" ? "--ch-in" : "--ch-out")), ink = "var(--ink)";
   rows = rows.slice().sort((a, b) => b.vals.reduce((x, y) => x + y, 0) - a.vals.reduce((x, y) => x + y, 0));
   const cell = (v, r, w) => { const t = v / max;
     return `<span class="hc" style="${v ? `background:rgba(${rgb},${(0.14 + t * 0.86).toFixed(2)});color:${t > 0.45 ? "#fff" : ink}` : ""}" title="${esc(r.label)} · ${fmtD(w.from)} – ${fmtD(w.to)}: ${nf(v)}">${v ? nf(v) : ""}</span>`; };
@@ -1273,7 +1289,10 @@ V.settings = () => {
   const off = new Set(s.tgOff || []);
   const ev = Object.entries(s.tgEvents || {});
   const hostelGroups = S.d.hostels.filter((h) => h.tgChat).length + S.d.foundations.filter((f) => f.tgChat).length;
-  return head("Settings")
+  const cur = S.d.theme || "e";
+  const themeCard = `<div class="card" style="max-width:760px;margin-bottom:14px"><div class="ch"><h3>Colour Theme</h3><span class="sub">Applies to every user</span></div><div style="padding:16px 20px"><div class="thgrid">${THEMES.map(([k, n, d, c]) =>
+    `<button type="button" class="thc${k === cur ? " on" : ""}" data-act="theme" data-v="${k}" aria-pressed="${k === cur}"><span class="thp"><i class="s" style="background:${c[0]}"></i><span class="m" style="background:${c[1]}">${c.slice(2).map((x) => `<span style="background:${x};border:1px solid rgba(0,0,0,.06)"></span>`).join("")}</span></span><b>${esc(n)}</b><small>${esc(d)}</small></button>`).join("")}</div></div></div>`;
+  return head("Settings") + themeCard
     + `<div class="card" style="max-width:760px"><div class="ch"><h3>Telegram notifications</h3><span class="sub">${hostelGroups ? `Main group + ${hostelGroups} more group${hostelGroups > 1 ? "s" : ""}` : "Main group"}</span></div>
     <form id="setForm" class="db" style="padding:18px 20px">
       <div class="fld"><label>Organization Name</label><input name="orgName" value="${esc(s.orgName || "")}"></div>
@@ -1737,6 +1756,12 @@ const ACT = {
   stockin: () => stockForm(),
   bulkup: () => bulkForm(),
   hmkind: (el) => { S.hmKind = el.dataset.v; render(); },
+  theme: async (el) => {
+    const t = el.dataset.v, prev = S.d.theme;
+    S.d.theme = t; applyTheme(t); render();
+    try { await api("settings.theme", { theme: t }); toast(`Theme changed to ${THEMES.find((x) => x[0] === t)[1]}`); }
+    catch (ex) { S.d.theme = prev; applyTheme(prev); render(); toast(ex.message, true); }
+  },
   countin: () => countForm(),
   cntok: (el) => countDecideForm(+el.dataset.id, true),
   cntno: (el) => countDecideForm(+el.dataset.id, false),
