@@ -898,7 +898,7 @@ const MASTERS = {
       { h: "Warranty applicable", t: (r) => (r.warranty ? "Yes" : "No"), html: (r) => (r.warranty ? `<span class="b green">Yes</span>` : `<span class="dim">No</span>`) },
       { h: "Items", t: (r) => S.d.items.filter((i) => i.categoryId === r.id).length, num: 1 }],
     fields: [{ k: "name", l: "Category name", req: 1 },
-      { k: "warranty", l: "Warranty applicable", type: "check", val: false, help: "Items in this category ask for warranty details at Stock in, and are issued one piece at a time." }],
+      { k: "warranty", l: "Warranty applicable", type: "check", val: false }],
   },
   units: {
     title: "Measuring units", one: "measuring unit", sub: "What items are counted in (Nos, Sets, Kg…)", icon: "box", coll: "units",
