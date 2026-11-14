@@ -597,6 +597,7 @@ function issueActs(i) {
 }
 // Approval choices on Out Register: what is waiting, scoped to this login (the server only sends their data).
 const APPR = {
+  all: { l: "All", i: "check", c: "orange", list: () => [...M.incoming, ...M.dmgPending, ...M.openRepairs], sub: () => "Everything waiting" },
   transfer: { l: "Transfer", i: "move", c: "violet", list: () => M.incoming, sub: () => "Waiting for received qty" },
   damage: { l: "Damage", i: "alert", c: "red", list: () => M.dmgPending, sub: () => "Waiting for approval" },
   repair: { l: "Repair", i: "wrench", c: "amber", list: () => M.openRepairs, sub: () => `Still at repair · ${M.openRepairs.filter(isOverdue).length} overdue` },
@@ -611,8 +612,8 @@ V.issues = () => {
   const rows = base.filter((i) => (ap ? pend.has(i.id) : !f.kind || i.kind === f.kind));
   const n = (k) => rows.filter((i) => i.kind === k).length;
   const nb = (k) => base.filter((i) => !k || i.kind === k).length;
-  const apTotal = Object.values(APPR).reduce((s, a) => s + a.list().length, 0);
-  const apBtn = `<div class="apwrap"><button type="button" class="tk-appr${ap ? " on" : ""}" data-act="apprmenu" data-m="appr" aria-haspopup="true" aria-expanded="${S.apprOpen === "appr"}">${ic("check")}${ap ? `Approval: ${ap.l}` : "Approval"}<span class="n${apTotal ? " hot" : ""}">${ap ? pend.size : apTotal}</span>${ic("chev")}</button>${S.apprOpen === "appr" ? `<div class="apmenu" role="menu">${Object.entries(APPR).map(([k, a]) => `<button type="button" role="menuitem" class="apit${f.appr === k ? " on" : ""}" data-act="appr" data-v="${k}"><span class="aico t-${a.c}">${ic(a.i)}</span><span class="apt"><b>${a.l}</b><span>${esc(a.sub())}</span></span><span class="apn t-${a.c}">${a.list().length}</span></button>`).join("")}</div>` : ""}</div>`;
+  const apTotal = APPR.all.list().length;
+  const apBtn = `<div class="apwrap"><button type="button" class="tk-appr${ap ? " on" : ""}" data-act="apprmenu" data-m="appr" aria-haspopup="true" aria-expanded="${S.apprOpen === "appr"}">${ic("check")}${ap ? `Approval: ${ap.l}` : "Approval"}<span class="n${(ap ? pend.size : apTotal) ? " hot" : ""}">${ap ? pend.size : apTotal}</span>${ic("chev")}</button>${S.apprOpen === "appr" ? `<div class="apmenu" role="menu">${Object.entries(APPR).map(([k, a]) => `<button type="button" role="menuitem" class="apit${f.appr === k ? " on" : ""}" data-act="appr" data-v="${k}"><span class="aico t-${a.c}">${ic(a.i)}</span><span class="apt"><b>${a.l}</b><span>${esc(a.sub())}</span></span><span class="apn t-${a.c}">${a.list().length}</span></button>`).join("")}</div>` : ""}</div>`;
   // Type: All / Transfer / Repair / Damage in one dropdown, coloured by the chosen type.
   const TYPES = [["", "All", "list", "blue"], ["transfer", "Transfer", "move", "violet"], ["repair", "Repair", "wrench", "amber"], ["damage", "Damage", "alert", "red"]];
   const cur = TYPES.find(([k]) => k === (ap ? "" : f.kind || "")) || TYPES[0];
