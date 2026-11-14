@@ -5,7 +5,8 @@
  * One organisation, many hostels. Stock is counted by quantity per hostel and item;
  * every change is a row in ha_txns, so any item's ledger can be rebuilt from opening onwards.
  *
- * Roles: Admin (all hostels, masters, settings) and Warden (own hostel only).
+ * Roles: Admin (everything, masters, settings), Organization (all Foundations and Units),
+ * Foundation (its Central Warehouse and its Units) and Unit (one Unit only).
  * Actions are passed as ?a=...; POSTs carry JSON and the header X-Req: 1.
  */
 declare(strict_types=1);
@@ -100,19 +101,32 @@ function nowMs(): int
     return (int) round(microtime(true) * 1000);
 }
 
+const ROLES = ['Admin', 'Organization', 'Foundation', 'Unit'];
+const UNIT_TYPES = ['Hostel', 'College'];
+
+function tgChatOk($v): string
+{
+    $tg = preg_replace('/\s+/', '', str((string) $v, 64));
+    if ($tg !== '' && !preg_match('/^(-?\d+|@\w+)$/', $tg)) {
+        fail('The Telegram group ID should be a number like -1001234567890.');
+    }
+    return $tg;
+}
+
 /* ---------- users & access ---------- */
 function me(): ?array
 {
     if (empty($_SESSION['uid'])) {
         return null;
     }
-    $u = q("SELECT id, name, email, role, hostel_id, active FROM ha_users WHERE id = ? AND password_hash IS NOT NULL", [$_SESSION['uid']])->fetch();
+    $u = q("SELECT id, name, email, role, hostel_id, foundation_id, active FROM ha_users WHERE id = ? AND password_hash IS NOT NULL", [$_SESSION['uid']])->fetch();
     if (!$u || !(int) $u['active']) {
         unset($_SESSION['uid']);
         return null;
     }
     $u['id'] = (int) $u['id'];
     $u['hostel_id'] = $u['hostel_id'] === null ? null : (int) $u['hostel_id'];
+    $u['foundation_id'] = $u['foundation_id'] === null ? null : (int) $u['foundation_id'];
     return $u;
 }
 function requireUser(): array
@@ -121,10 +135,41 @@ function requireUser(): array
     if (!$u) {
         fail('Please sign in again.', 401, 'unauthenticated');
     }
-    if ($u['role'] !== 'Admin' && !$u['hostel_id']) {
-        fail('Your login is not linked to a hostel yet. Ask an Admin to set your hostel.', 403, 'forbidden');
+    if ($u['role'] === 'Unit' && !$u['hostel_id']) {
+        fail('Your login is not linked to a Unit yet. Ask an Admin to set your Unit.', 403, 'forbidden');
+    }
+    if ($u['role'] === 'Foundation' && !$u['foundation_id']) {
+        fail('Your login is not linked to a Foundation yet. Ask an Admin to set your Foundation.', 403, 'forbidden');
     }
     return $u;
+}
+/** Admin and Organization logins see and work on every Foundation and Unit. */
+function seesAll(array $u): bool
+{
+    return in_array($u['role'], ['Admin', 'Organization'], true);
+}
+/** Locations (Units and Central Warehouses) a login may work on; null means all of them. */
+function scopeIds(array $u): ?array
+{
+    static $memo = [];
+    if (seesAll($u)) {
+        return null;
+    }
+    if ($u['role'] === 'Foundation') {
+        return $memo[$u['id']] ??= array_map('intval', q("SELECT id FROM ha_hostels WHERE foundation_id = ?", [$u['foundation_id']])->fetchAll(PDO::FETCH_COLUMN));
+    }
+    return [(int) $u['hostel_id']];
+}
+/** "hostel_id IN (…)" for the login's locations, with its parameters. */
+function scopeSql(array $u, string $col): array
+{
+    $ids = scopeIds($u) ?: [0];
+    return ["$col IN (" . implode(',', array_fill(0, count($ids), '?')) . ")", $ids];
+}
+/** Damage is approved by an Admin, Organization, or the Foundation the location belongs to. */
+function canApprove(array $u, int $hid): bool
+{
+    return seesAll($u) || ($u['role'] === 'Foundation' && canHostel($u, $hid));
 }
 function isAdmin(array $u): bool
 {
@@ -140,11 +185,15 @@ function requireAdmin(): array
 }
 function canHostel(array $u, ?int $hid): bool
 {
-    return $hid !== null && (isAdmin($u) || $u['hostel_id'] === $hid);
+    if ($hid === null) {
+        return false;
+    }
+    $ids = scopeIds($u);
+    return $ids === null || in_array($hid, $ids, true);
 }
 function publicMe(?array $u): ?array
 {
-    return $u ? ['id' => $u['id'], 'name' => $u['name'], 'email' => $u['email'], 'role' => $u['role'], 'hostelId' => $u['hostel_id']] : null;
+    return $u ? ['id' => $u['id'], 'name' => $u['name'], 'email' => $u['email'], 'role' => $u['role'], 'hostelId' => $u['hostel_id'], 'foundationId' => $u['foundation_id']] : null;
 }
 function loginCount(): int
 {
@@ -178,6 +227,63 @@ function recordDamage(array $u, int $hid, int $iid, int $qty, string $place, str
         addTxn(['hostel_id' => $hid, 'item_id' => $iid, 'kind' => 'damaged', 'dir' => -1, 'qty' => $qty, 'issue_id' => $id, 'party' => $place, 'at' => $at, 'notes' => $notes], $u);
     }
     return issueRow($id);
+}
+/**
+ * Adds one stock-in entry (Purchase or Opening). Returns an error message, or '' when fine.
+ * $checkOnly validates without saving; $notify sends the Telegram message for purchases.
+ */
+function stockAdd(array $u, array $b, bool $checkOnly = false, bool $notify = true): string
+{
+    $hid = idOrNull($b['hostelId'] ?? null);
+    $iid = idOrNull($b['itemId'] ?? null);
+    $kind = ($b['kind'] ?? '') === 'opening' ? 'opening' : 'in';
+    $qty = int0($b['qty'] ?? 0);
+    $loc = hostelRow($hid);
+    if (!$loc) {
+        return 'Choose a unit or warehouse.';
+    }
+    if (!canHostel($u, $hid)) {
+        return "You don't look after {$loc['name']}.";
+    }
+    $item = itemRow($iid);
+    if (!$item) {
+        return 'Choose an item.';
+    }
+    if ($qty <= 0 || $qty > 1000000) {
+        return 'Enter a quantity greater than 0.';
+    }
+    if ($kind === 'in' && str($b['notes'] ?? '') === '') {
+        return 'Enter notes for a purchase (bill number, where it came from…).';
+    }
+    if ($kind === 'opening' && (int) q("SELECT COUNT(*) FROM ha_txns WHERE hostel_id=? AND item_id=? AND kind='opening'", [$hid, $iid])->fetchColumn() > 0) {
+        return "Opening stock of {$item['name']} is already entered for {$loc['name']}. Add more as a Purchase instead.";
+    }
+    $warr = itemWarranty($iid);
+    $expiry = dateOr($b['warrantyExpiry'] ?? '', null);
+    if ($warr && !$expiry) {
+        return "{$item['name']} has a warranty: enter the warranty expiry date.";
+    }
+    if ($checkOnly) {
+        return '';
+    }
+    $at = dateOr($b['at'] ?? '', today());
+    $party = str($b['party'] ?? '', 160);
+    $notes = str($b['notes'] ?? '', 500);
+    addTxn(['hostel_id' => $hid, 'item_id' => $iid, 'kind' => $kind, 'dir' => 1, 'qty' => $qty, 'party' => $party, 'at' => $at, 'notes' => $notes], $u);
+    if ($warr) {
+        $tid = (int) db()->lastInsertId();
+        q("INSERT INTO ha_warranties (hostel_id, category_id, item_id, txn_id, title, warranty_no, supplier, qty, start_at, expiry_at, notes, created_by, created_at) VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?)",
+            [$hid, $item['category_id'], $iid, $tid, str($b['warrantyNo'] ?? '', 80), $party, $qty, dateOr($b['warrantyStart'] ?? '', $at), $expiry, $notes, $u['id'], nowMs()]);
+    }
+    if ($kind === 'in' && $notify) {
+        notifyStockIn($hid, $iid, $qty, $party, $notes, $u);
+    }
+    return '';
+}
+/** True when the item's category is marked "Warranty applicable". */
+function itemWarranty(int $iid): bool
+{
+    return (bool) q("SELECT c.warranty FROM ha_items i JOIN ha_categories c ON c.id = i.category_id WHERE i.id = ?", [$iid])->fetchColumn();
 }
 function lockHostel(int $hid): void
 {
@@ -218,10 +324,11 @@ function issueRow(int $id): array
 function dupCheck(string $coll, ?int $id, array $d): void
 {
     $map = [
-        'hostels' => ['ha_hostels', 'name', 'A hostel', 'Masters → Hostels', true],
+        'hostels' => ['ha_hostels', 'name', 'A unit', 'Masters → Units', true],
+        'foundations' => ['ha_foundations', 'name', 'A foundation', 'Masters → Foundations', true],
         'items' => ['ha_items', 'name', 'An item', 'Masters → Items', true],
         'categories' => ['ha_categories', 'name', 'A category', 'Masters → Categories', false],
-        'units' => ['ha_units', 'name', 'A unit', 'Masters → Units', false],
+        'units' => ['ha_units', 'name', 'A measuring unit', 'Masters → Measuring units', false],
         'damagePlaces' => ['ha_damage_places', 'name', 'A damage destination', 'Masters → Damage destinations', false],
         'users' => ['ha_users', 'email', 'A user', 'Masters → Users', true],
     ];
@@ -254,7 +361,7 @@ function shapeIssue(array $r): array
         'hostelId' => (int) $r['hostel_id'], 'toHostelId' => $r['to_hostel_id'] === null ? null : (int) $r['to_hostel_id'],
         'itemId' => (int) $r['item_id'], 'qty' => (int) $r['qty'], 'place' => $r['place'], 'at' => $r['at'],
         'expectedAt' => $r['expected_at'], 'notes' => $r['notes'], 'returnedQty' => (int) $r['returned_qty'],
-        'scrappedQty' => (int) $r['scrapped_qty'], 'receivedQty' => $r['received_qty'] === null ? null : (int) $r['received_qty'], 'createdBy' => $r['created_by'] === null ? null : (int) $r['created_by'],
+        'repairType' => $r['repair_type'] ?? '', 'scrappedQty' => (int) $r['scrapped_qty'], 'receivedQty' => $r['received_qty'] === null ? null : (int) $r['received_qty'], 'createdBy' => $r['created_by'] === null ? null : (int) $r['created_by'],
         'createdAt' => (int) $r['created_at'], 'decidedBy' => $r['decided_by'] === null ? null : (int) $r['decided_by'],
         'decidedAt' => $r['decided_at'] === null ? null : (int) $r['decided_at'], 'decisionNote' => $r['decision_note'],
     ];
@@ -317,17 +424,23 @@ try {
         case 'data': {
             $u = requireUser();
             $admin = isAdmin($u);
-            $h = $u['hostel_id'];
+            [$inH, $hp] = scopeSql($u, 'hostel_id');
             $res = ['me' => publicMe($u)];
-            $res['hostels'] = array_map(fn($r) => ['id' => (int) $r['id'], 'name' => $r['name'], 'code' => $r['code'], 'address' => $r['address'], 'phone' => $r['phone'], 'active' => (bool) $r['active']] + ($admin ? ['tgChat' => $r['tg_chat']] : []),
-                db()->query("SELECT * FROM ha_hostels ORDER BY name")->fetchAll());
-            $res['categories'] = array_map(fn($r) => ['id' => (int) $r['id'], 'name' => $r['name']], db()->query("SELECT * FROM ha_categories ORDER BY name")->fetchAll());
+            $res['org'] = settings()['org_name'] ?? '';
+            $res['foundations'] = array_map(fn($r) => ['id' => (int) $r['id'], 'name' => $r['name'], 'active' => (bool) $r['active']] + ($admin ? ['tgChat' => $r['tg_chat']] : []),
+                db()->query("SELECT * FROM ha_foundations ORDER BY name")->fetchAll());
+            // Every location (Units and Central Warehouses), so names show and transfers can go anywhere.
+            $res['hostels'] = array_map(fn($r) => ['id' => (int) $r['id'], 'name' => $r['name'], 'code' => $r['code'], 'address' => $r['address'], 'phone' => $r['phone'], 'active' => (bool) $r['active'],
+                'foundationId' => $r['foundation_id'] === null ? null : (int) $r['foundation_id'], 'kind' => $r['kind'], 'unitType' => $r['unit_type']] + ($admin ? ['tgChat' => $r['tg_chat']] : []),
+                db()->query("SELECT * FROM ha_hostels ORDER BY kind = 'unit', name")->fetchAll());
+            $res['categories'] = array_map(fn($r) => ['id' => (int) $r['id'], 'name' => $r['name'], 'warranty' => (bool) $r['warranty']], db()->query("SELECT * FROM ha_categories ORDER BY name")->fetchAll());
             $res['units'] = array_map(fn($r) => ['id' => (int) $r['id'], 'name' => $r['name']], db()->query("SELECT * FROM ha_units ORDER BY name")->fetchAll());
             $res['damagePlaces'] = array_map(fn($r) => ['id' => (int) $r['id'], 'name' => $r['name']], db()->query("SELECT * FROM ha_damage_places ORDER BY name")->fetchAll());
             $res['items'] = array_map(fn($r) => ['id' => (int) $r['id'], 'name' => $r['name'], 'categoryId' => $r['category_id'] === null ? null : (int) $r['category_id'], 'unit' => $r['unit'], 'notes' => $r['notes'], 'active' => (bool) $r['active']],
                 db()->query("SELECT * FROM ha_items ORDER BY name")->fetchAll());
             $res['users'] = array_map(function ($r) use ($admin) {
-                $o = ['id' => (int) $r['id'], 'name' => $r['name'], 'role' => $r['role'], 'hostelId' => $r['hostel_id'] === null ? null : (int) $r['hostel_id']];
+                $o = ['id' => (int) $r['id'], 'name' => $r['name'], 'role' => $r['role'], 'hostelId' => $r['hostel_id'] === null ? null : (int) $r['hostel_id'],
+                    'foundationId' => $r['foundation_id'] === null ? null : (int) $r['foundation_id']];
                 if ($admin) {
                     $o += ['email' => $r['email'], 'phone' => $r['phone'], 'active' => (bool) $r['active'], 'hasLogin' => $r['password_hash'] !== null];
                 }
@@ -339,22 +452,24 @@ try {
                 'dir' => (int) $r['dir'], 'qty' => (int) $r['qty'], 'issueId' => $r['issue_id'] === null ? null : (int) $r['issue_id'],
                 'otherHostelId' => $r['other_hostel_id'] === null ? null : (int) $r['other_hostel_id'], 'party' => $r['party'],
                 'at' => $r['at'], 'notes' => $r['notes'], 'createdBy' => $r['created_by'] === null ? null : (int) $r['created_by'], 'createdAt' => (int) $r['created_at'],
-            ], ($admin ? db()->query("SELECT * FROM ha_txns ORDER BY at, id") : q("SELECT * FROM ha_txns WHERE hostel_id = ? ORDER BY at, id", [$h]))->fetchAll());
+            ], (seesAll($u) ? db()->query("SELECT * FROM ha_txns ORDER BY at, id") : q("SELECT * FROM ha_txns WHERE $inH ORDER BY at, id", $hp))->fetchAll());
 
-            $res['issues'] = array_map('shapeIssue', ($admin
+            [$inTo] = scopeSql($u, 'to_hostel_id');
+            $res['issues'] = array_map('shapeIssue', (seesAll($u)
                 ? db()->query("SELECT * FROM ha_issues ORDER BY id DESC")
-                : q("SELECT * FROM ha_issues WHERE hostel_id = ? OR to_hostel_id = ? ORDER BY id DESC", [$h, $h]))->fetchAll());
+                : q("SELECT * FROM ha_issues WHERE $inH OR $inTo ORDER BY id DESC", [...$hp, ...$hp]))->fetchAll());
 
             $res['warranties'] = array_map(fn($r) => [
                 'id' => (int) $r['id'], 'hostelId' => $r['hostel_id'] === null ? null : (int) $r['hostel_id'],
                 'categoryId' => $r['category_id'] === null ? null : (int) $r['category_id'], 'itemId' => $r['item_id'] === null ? null : (int) $r['item_id'],
                 'title' => $r['title'], 'warrantyNo' => $r['warranty_no'], 'supplier' => $r['supplier'], 'qty' => $r['qty'] === null ? null : (int) $r['qty'],
-                'startAt' => $r['start_at'], 'expiryAt' => $r['expiry_at'], 'notes' => $r['notes'],
-            ], ($admin ? db()->query("SELECT * FROM ha_warranties ORDER BY expiry_at") : q("SELECT * FROM ha_warranties WHERE hostel_id = ? ORDER BY expiry_at", [$h]))->fetchAll());
+                'startAt' => $r['start_at'], 'expiryAt' => $r['expiry_at'], 'notes' => $r['notes'], 'txnId' => $r['txn_id'] === null ? null : (int) $r['txn_id'],
+            ], (seesAll($u) ? db()->query("SELECT * FROM ha_warranties ORDER BY expiry_at") : q("SELECT * FROM ha_warranties WHERE $inH ORDER BY expiry_at", $hp))->fetchAll());
 
             if ($admin) {
                 $s = settings();
                 $res['settings'] = [
+                    'orgName' => $s['org_name'] ?? '',
                     'telegramOn' => ($s['telegram_on'] ?? '0') === '1', 'telegramChat' => $s['telegram_chat'] ?? '',
                     'telegramTokenSet' => ($s['telegram_token'] ?? '') !== '', 'appUrl' => $s['app_url'] ?? '',
                     'tgOff' => array_values(array_filter(explode(',', $s['tg_off'] ?? ''))), 'dailyTime' => $s['daily_time'] ?? '09:00',
@@ -389,17 +504,47 @@ try {
             dupCheck($coll, $id, $d);
             switch ($coll) {
                 case 'hostels':
+                    // Units (hostels and colleges). Central Warehouses are managed through their Foundation.
                     $name = str($d['name'] ?? '', 120);
                     if ($name === '') {
-                        fail('Enter the hostel name.');
+                        fail('Enter the unit name.');
                     }
-                    $tg = preg_replace('/\s+/', '', str($d['tgChat'] ?? '', 64));
-                    if ($tg !== '' && !preg_match('/^(-?\d+|@\w+)$/', $tg)) {
-                        fail('The Telegram group ID should be a number like -1001234567890.');
+                    if ($id && (hostelRow($id)['kind'] ?? '') === 'warehouse') {
+                        fail('A Central Warehouse is renamed with its Foundation, in Masters → Foundations.');
                     }
-                    $vals = [$name, str($d['address'] ?? ''), $tg, empty($d['active']) ? 0 : 1];
-                    $id ? q("UPDATE ha_hostels SET name=?, address=?, tg_chat=?, active=? WHERE id=?", [...$vals, $id])
-                        : q("INSERT INTO ha_hostels (name, address, tg_chat, active) VALUES (?, ?, ?, ?)", $vals);
+                    $fid = idOrNull($d['foundationId'] ?? null);
+                    if (!$fid || !q("SELECT 1 FROM ha_foundations WHERE id=?", [$fid])->fetchColumn()) {
+                        fail('Choose the Foundation this unit belongs to.');
+                    }
+                    $type = in_array($d['unitType'] ?? '', UNIT_TYPES, true) ? $d['unitType'] : '';
+                    if ($type === '') {
+                        fail('Choose the unit type.');
+                    }
+                    $tg = tgChatOk($d['tgChat'] ?? '');
+                    $vals = [$name, $fid, $type, str($d['address'] ?? ''), $tg, empty($d['active']) ? 0 : 1];
+                    $id ? q("UPDATE ha_hostels SET name=?, foundation_id=?, unit_type=?, address=?, tg_chat=?, active=? WHERE id=?", [...$vals, $id])
+                        : q("INSERT INTO ha_hostels (name, foundation_id, unit_type, address, tg_chat, active, kind) VALUES (?, ?, ?, ?, ?, ?, 'unit')", $vals);
+                    break;
+                case 'foundations':
+                    $name = str($d['name'] ?? '', 120);
+                    if ($name === '') {
+                        fail('Enter the foundation name.');
+                    }
+                    $wh = warehouseName($name);
+                    if (q("SELECT 1 FROM ha_hostels WHERE name=? AND NOT (kind='warehouse' AND foundation_id <=> ?)", [$wh, $id])->fetchColumn()) {
+                        fail('A unit is already named "' . $wh . '". Rename it first.');
+                    }
+                    $active = empty($d['active']) ? 0 : 1;
+                    $tg = tgChatOk($d['tgChat'] ?? '');
+                    if ($id) {
+                        q("UPDATE ha_foundations SET name=?, tg_chat=?, active=? WHERE id=?", [$name, $tg, $active, $id]);
+                        q("UPDATE ha_hostels SET name=?, active=? WHERE kind='warehouse' AND foundation_id=?", [$wh, $active, $id]);
+                    } else {
+                        q("INSERT INTO ha_foundations (name, tg_chat, active) VALUES (?, ?, ?)", [$name, $tg, $active]);
+                        $id = (int) db()->lastInsertId();
+                        // Every Foundation gets its own Central Warehouse.
+                        q("INSERT INTO ha_hostels (foundation_id, kind, unit_type, name, active) VALUES (?, 'warehouse', '', ?, ?)", [$id, $wh, $active]);
+                    }
                     break;
                 case 'items':
                     $name = str($d['name'] ?? '', 120);
@@ -432,6 +577,13 @@ try {
                     }
                     break;
                 case 'categories':
+                    $name = str($d['name'] ?? '', 80);
+                    if ($name === '') {
+                        fail('Enter a name.');
+                    }
+                    $w = empty($d['warranty']) ? 0 : 1;
+                    $id ? q("UPDATE ha_categories SET name=?, warranty=? WHERE id=?", [$name, $w, $id]) : q("INSERT INTO ha_categories (name, warranty) VALUES (?, ?)", [$name, $w]);
+                    break;
                 case 'damagePlaces':
                     $t = $coll === 'categories' ? 'ha_categories' : 'ha_damage_places';
                     $name = str($d['name'] ?? '', 80);
@@ -443,15 +595,19 @@ try {
                 case 'users':
                     $name = str($d['name'] ?? '', 120);
                     $email = strtolower(str($d['email'] ?? '', 190));
-                    $role = ($d['role'] ?? '') === 'Admin' ? 'Admin' : 'Warden';
-                    $hid = $role === 'Warden' ? idOrNull($d['hostelId'] ?? null) : null;
+                    $role = in_array($d['role'] ?? '', ROLES, true) ? $d['role'] : 'Unit';
+                    $hid = $role === 'Unit' ? idOrNull($d['hostelId'] ?? null) : null;
+                    $fid = $role === 'Foundation' ? idOrNull($d['foundationId'] ?? null) : null;
                     $active = empty($d['active']) ? 0 : 1;
                     $pass = (string) ($d['password'] ?? '');
                     if ($name === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
                         fail('Enter a name and a valid email.');
                     }
-                    if ($role === 'Warden' && !$hid) {
-                        fail('Choose the hostel this warden looks after.');
+                    if ($role === 'Unit' && (!$hid || (hostelRow($hid)['kind'] ?? '') !== 'unit')) {
+                        fail('Choose the unit this person looks after.');
+                    }
+                    if ($role === 'Foundation' && (!$fid || !q("SELECT 1 FROM ha_foundations WHERE id=?", [$fid])->fetchColumn())) {
+                        fail('Choose the Foundation this person looks after.');
                     }
                     if ($pass !== '' && strlen($pass) < 8) {
                         fail('Password must be at least 8 characters.');
@@ -462,11 +618,11 @@ try {
                     if ($id && $id === me()['id'] && ($role !== 'Admin' || !$active)) {
                         fail('You cannot remove your own Admin access.');
                     }
-                    $vals = [$name, $email, $role, $hid, str($d['phone'] ?? '', 40), $active];
+                    $vals = [$name, $email, $role, $hid, $fid, str($d['phone'] ?? '', 40), $active];
                     if ($id) {
-                        q("UPDATE ha_users SET name=?, email=?, role=?, hostel_id=?, phone=?, active=? WHERE id=?", [...$vals, $id]);
+                        q("UPDATE ha_users SET name=?, email=?, role=?, hostel_id=?, foundation_id=?, phone=?, active=? WHERE id=?", [...$vals, $id]);
                     } else {
-                        q("INSERT INTO ha_users (name, email, role, hostel_id, phone, active) VALUES (?, ?, ?, ?, ?, ?)", $vals);
+                        q("INSERT INTO ha_users (name, email, role, hostel_id, foundation_id, phone, active) VALUES (?, ?, ?, ?, ?, ?, ?)", $vals);
                         $id = (int) db()->lastInsertId();
                     }
                     if ($pass !== '') {
@@ -489,13 +645,30 @@ try {
             };
             switch ($coll) {
                 case 'hostels':
+                    if ((hostelRow($id)['kind'] ?? '') === 'warehouse') {
+                        fail('A Central Warehouse is removed with its Foundation.');
+                    }
                     if ($used("SELECT 1 FROM ha_txns WHERE ? IN (hostel_id, other_hostel_id) LIMIT 1") || $used("SELECT 1 FROM ha_issues WHERE ? IN (hostel_id, to_hostel_id) LIMIT 1")) {
-                        fail('This hostel has stock history, so it can\'t be deleted. Mark it inactive instead.');
+                        fail('This unit has stock history, so it can\'t be deleted. Mark it inactive instead.');
                     }
                     if ($used("SELECT 1 FROM ha_users WHERE hostel_id=? LIMIT 1")) {
-                        fail('Some wardens are linked to this hostel. Move them to another hostel first.');
+                        fail('Some users are linked to this unit. Move them to another unit first.');
                     }
                     q("DELETE FROM ha_hostels WHERE id=?", [$id]);
+                    break;
+                case 'foundations':
+                    if ($used("SELECT 1 FROM ha_hostels WHERE foundation_id=? AND kind='unit' LIMIT 1")) {
+                        fail('This Foundation still has units. Move or delete them first.');
+                    }
+                    if ($used("SELECT 1 FROM ha_users WHERE foundation_id=? LIMIT 1")) {
+                        fail('Some users are linked to this Foundation. Move them first.');
+                    }
+                    $wid = (int) q("SELECT id FROM ha_hostels WHERE kind='warehouse' AND foundation_id=?", [$id])->fetchColumn();
+                    if ($wid && (q("SELECT 1 FROM ha_txns WHERE ? IN (hostel_id, other_hostel_id) LIMIT 1", [$wid])->fetchColumn() || q("SELECT 1 FROM ha_issues WHERE ? IN (hostel_id, to_hostel_id) LIMIT 1", [$wid])->fetchColumn())) {
+                        fail('Its Central Warehouse has stock history, so this Foundation can\'t be deleted. Mark it inactive instead.');
+                    }
+                    q("DELETE FROM ha_hostels WHERE kind='warehouse' AND foundation_id=?", [$id]);
+                    q("DELETE FROM ha_foundations WHERE id=?", [$id]);
                     break;
                 case 'items':
                     if ($used("SELECT 1 FROM ha_txns WHERE item_id=? LIMIT 1") || $used("SELECT 1 FROM ha_issues WHERE item_id=? LIMIT 1")) {
@@ -532,33 +705,78 @@ try {
 
         /* ===== stock in: opening stock and items received ===== */
         case 'stock.add': {
+            // Purchase (kind 'in') or Opening stock. Items in a warranty category also record their warranty.
             $u = requireUser();
             $b = body();
-            $hid = idOrNull($b['hostelId'] ?? null);
-            $iid = idOrNull($b['itemId'] ?? null);
-            $kind = ($b['kind'] ?? '') === 'opening' ? 'opening' : 'in';
-            $qty = int0($b['qty'] ?? 0);
-            if (!canHostel($u, $hid) || !hostelRow($hid)) {
-                fail('Choose your hostel.');
-            }
-            if (!itemRow($iid)) {
-                fail('Choose an item.');
-            }
-            if ($qty <= 0 || $qty > 1000000) {
-                fail('Enter a quantity greater than 0.');
-            }
-            if ($kind === 'in' && str($b['notes'] ?? '') === '') {
-                fail('Enter notes for items received (where they came from, bill number…).');
-            }
-            if ($kind === 'opening' && (int) q("SELECT COUNT(*) FROM ha_txns WHERE hostel_id=? AND item_id=? AND kind='opening'", [$hid, $iid])->fetchColumn() > 0) {
-                fail('Opening stock for this item is already entered for this hostel. Add new stock as "Received" instead.');
-            }
-            addTxn(['hostel_id' => $hid, 'item_id' => $iid, 'kind' => $kind, 'dir' => 1, 'qty' => $qty,
-                'party' => str($b['party'] ?? '', 160), 'at' => dateOr($b['at'] ?? '', today()), 'notes' => str($b['notes'] ?? '', 500)], $u);
-            if ($kind === 'in') {
-                notifyStockIn($hid, $iid, $qty, str($b['party'] ?? '', 160), str($b['notes'] ?? '', 500), $u);
+            $err = stockAdd($u, $b);
+            if ($err) {
+                fail($err);
             }
             out(['ok' => true]);
+        }
+
+        case 'stock.bulk': {
+            // Opening stock from an uploaded sheet. With check=1 nothing is saved: every row is checked and
+            // its problems returned. Otherwise all rows are saved together, or none if any row has a problem.
+            $u = requireUser();
+            $b = body();
+            $rows = is_array($b['rows'] ?? null) ? array_slice($b['rows'], 0, 2000) : [];
+            if (!$rows) {
+                fail('The file has no rows to import.');
+            }
+            $locs = [];
+            foreach (db()->query("SELECT id, name FROM ha_hostels WHERE active = 1")->fetchAll() as $r) {
+                $locs[mb_strtolower(trim($r['name']))] = (int) $r['id'];
+            }
+            $items = [];
+            foreach (db()->query("SELECT id, name FROM ha_items WHERE active = 1")->fetchAll() as $r) {
+                $items[mb_strtolower(trim($r['name']))] = (int) $r['id'];
+            }
+            $prep = [];
+            $errors = [];
+            $seen = [];
+            foreach ($rows as $n => $r) {
+                $line = $n + 2; // row 1 is the header
+                $hid = $locs[mb_strtolower(trim((string) ($r['location'] ?? '')))] ?? null;
+                $iid = $items[mb_strtolower(trim((string) ($r['item'] ?? '')))] ?? null;
+                $e = [];
+                if (!$hid) {
+                    $e[] = 'unit / warehouse "' . str($r['location'] ?? '', 60) . '" not found';
+                }
+                if (!$iid) {
+                    $e[] = 'item "' . str($r['item'] ?? '', 60) . '" not found';
+                }
+                if ($hid && $iid) {
+                    $key = "$hid-$iid";
+                    if (isset($seen[$key])) {
+                        $e[] = 'same unit and item as row ' . $seen[$key];
+                    }
+                    $seen[$key] = $line;
+                    $d = ['kind' => 'opening', 'hostelId' => $hid, 'itemId' => $iid, 'qty' => $r['qty'] ?? '', 'at' => $r['date'] ?? '', 'notes' => $r['notes'] ?? '',
+                        'party' => $r['supplier'] ?? '', 'warrantyNo' => $r['warrantyNo'] ?? '', 'warrantyStart' => $r['warrantyStart'] ?? '', 'warrantyExpiry' => $r['warrantyExpiry'] ?? ''];
+                    $msg = stockAdd($u, $d, true);
+                    if ($msg) {
+                        $e[] = $msg;
+                    }
+                    $prep[] = $d;
+                }
+                if ($e) {
+                    $errors[] = ['row' => $line, 'error' => implode('; ', $e)];
+                }
+            }
+            if ($errors || !empty($b['check'])) {
+                out(['ok' => !$errors, 'rows' => count($rows), 'errors' => $errors]);
+            }
+            db()->beginTransaction();
+            foreach ($prep as $d) {
+                $msg = stockAdd($u, $d, false, false);
+                if ($msg) {
+                    db()->rollBack();
+                    fail($msg);
+                }
+            }
+            db()->commit();
+            out(['ok' => true, 'added' => count($prep)]);
         }
 
         case 'txn.delete': {
@@ -600,7 +818,7 @@ try {
                 fail('Choose the issue type.');
             }
             if (!canHostel($u, $hid) || !hostelRow($hid)) {
-                fail('Choose the hostel the items are leaving.');
+                fail('Choose the unit or warehouse the items are leaving.');
             }
             $item = itemRow($iid);
             if (!$item) {
@@ -609,8 +827,13 @@ try {
             if ($qty <= 0) {
                 fail('Enter a quantity greater than 0.');
             }
+            // Items with a warranty are issued one piece at a time.
+            if ($qty > 1 && itemWarranty($iid)) {
+                fail("{$item['name']} has a warranty, so it is issued one piece at a time. Enter quantity 1.");
+            }
+            $rtype = $kind === 'repair' ? (($b['repairType'] ?? '') === 'Internal' ? 'Internal' : 'External') : '';
             if ($kind === 'repair' && $place === '') {
-                fail('Enter who the items are sent to for repair.');
+                fail($rtype === 'Internal' ? 'Enter who is repairing the items.' : 'Enter who the items are sent to for repair.');
             }
             if ($kind === 'repair' && !dateOr($b['expectedAt'] ?? '', null)) {
                 fail('Enter the expected return date.');
@@ -621,10 +844,10 @@ try {
             if ($kind === 'transfer') {
                 $toRow = hostelRow($to);
                 if (!$toRow || !(int) $toRow['active']) {
-                    fail('Choose the hostel receiving the items.');
+                    fail('Choose where the items are going.');
                 }
                 if ($to === $hid) {
-                    fail('The receiving hostel must be different.');
+                    fail('Send to a different unit or warehouse.');
                 }
             }
             db()->beginTransaction();
@@ -632,7 +855,7 @@ try {
             $avail = onHand($hid, $iid) - pendingOut($hid, $iid);
             if ($qty > $avail) {
                 db()->rollBack();
-                fail("Only $avail {$item['unit']} of {$item['name']} available to issue at this hostel.");
+                fail("Only $avail {$item['unit']} of {$item['name']} available to issue here.");
             }
             if ($kind === 'damage') {
                 $issue = recordDamage($u, $hid, $iid, $qty, $place, $at, $notes);
@@ -643,9 +866,9 @@ try {
                 out(['ok' => true, 'issue' => shapeIssue($issue)]);
             }
             $status = ['transfer' => 'pending', 'repair' => 'at_repair'][$kind];
-            q("INSERT INTO ha_issues (kind, status, hostel_id, to_hostel_id, item_id, qty, place, at, expected_at, notes, created_by, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [
-                $kind, $status, $hid, $kind === 'transfer' ? $to : null, $iid, $qty, $kind === 'transfer' ? '' : $place, $at,
+            q("INSERT INTO ha_issues (kind, status, hostel_id, to_hostel_id, item_id, qty, place, repair_type, at, expected_at, notes, created_by, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [
+                $kind, $status, $hid, $kind === 'transfer' ? $to : null, $iid, $qty, $kind === 'transfer' ? '' : $place, $rtype, $at,
                 $kind === 'repair' ? dateOr($b['expectedAt'] ?? '', null) : null, $notes, $u['id'], nowMs(),
             ]);
             $issueId = (int) db()->lastInsertId();
@@ -671,7 +894,7 @@ try {
                 fail('This transfer has already been updated.');
             }
             if (!canHostel($u, (int) $i['to_hostel_id'])) {
-                fail('Only the receiving hostel can update this transfer.', 403, 'forbidden');
+                fail('Only the receiving unit or warehouse can update this transfer.', 403, 'forbidden');
             }
             if ($recvQty < 0 || $recvQty > (int) $i['qty']) {
                 fail('Received quantity must be between 0 and ' . (int) $i['qty'] . '.');
@@ -690,7 +913,7 @@ try {
                 $avail = onHand((int) $i['hostel_id'], (int) $i['item_id']) - pendingOut((int) $i['hostel_id'], (int) $i['item_id'], (int) $i['id']);
                 if ($recvQty > $avail) {
                     db()->rollBack();
-                    fail("The sending hostel now has only $avail in stock, so $recvQty can't be received. Ask them to cancel and resend.");
+                    fail("The sender now has only $avail in stock, so $recvQty can't be received. Ask them to cancel and resend.");
                 }
                 $common = ['item_id' => (int) $i['item_id'], 'qty' => $recvQty, 'issue_id' => (int) $i['id'], 'at' => today(), 'notes' => $i['notes']];
                 addTxn($common + ['hostel_id' => (int) $i['hostel_id'], 'kind' => 'transfer_out', 'dir' => -1, 'other_hostel_id' => (int) $i['to_hostel_id']], $u);
@@ -704,10 +927,13 @@ try {
         }
 
         case 'damage.decide': {
-            // An Admin approves damage (all or fewer than reported) or rejects it with a reason.
-            $u = requireAdmin();
+            // Admin, Organization or the location's Foundation approves damage (all or fewer than reported) or rejects it.
+            $u = requireUser();
             $b = body();
             $i = issueRow(idOrNull($b['id'] ?? null) ?? 0);
+            if (!canApprove($u, (int) $i['hostel_id'])) {
+                fail('Only an Admin, Organization or the Foundation user can approve damage.', 403, 'forbidden');
+            }
             $approve = ($b['decision'] ?? '') === 'approve';
             $note = str($b['note'] ?? '', 500);
             if ($i['kind'] !== 'damage' || $i['status'] !== 'pending') {
@@ -733,7 +959,7 @@ try {
                 $avail = onHand((int) $i['hostel_id'], (int) $i['item_id']) - pendingOut((int) $i['hostel_id'], (int) $i['item_id'], (int) $i['id']);
                 if ($qty > $avail) {
                     db()->rollBack();
-                    fail("The hostel now has only $avail in stock, so $qty can't be written off.");
+                    fail("Only $avail are now in stock there, so $qty can't be written off.");
                 }
                 addTxn(['hostel_id' => (int) $i['hostel_id'], 'item_id' => (int) $i['item_id'], 'kind' => 'damaged', 'dir' => -1, 'qty' => $qty,
                     'issue_id' => (int) $i['id'], 'party' => $i['place'], 'at' => today(), 'notes' => $i['notes']], $u);
@@ -753,7 +979,7 @@ try {
                 fail('Only a transfer or damage entry that is still waiting can be cancelled.');
             }
             if (!canHostel($u, (int) $i['hostel_id'])) {
-                fail('Only the hostel that entered this can cancel it.', 403, 'forbidden');
+                fail('Only the unit or warehouse that entered this can cancel it.', 403, 'forbidden');
             }
             q("UPDATE ha_issues SET status='cancelled', decided_by=?, decided_at=? WHERE id=? AND status='pending'", [$u['id'], nowMs(), $i['id']]);
             if ($i['kind'] === 'transfer') {
@@ -791,7 +1017,7 @@ try {
                 fail('This repair is already closed.');
             }
             if (!canHostel($u, (int) $i['hostel_id'])) {
-                fail('Only the hostel that sent these items can record their return.', 403, 'forbidden');
+                fail('Only the unit or warehouse that sent these items can record their return.', 403, 'forbidden');
             }
             $outstanding = (int) $i['qty'] - (int) $i['returned_qty'] - (int) $i['scrapped_qty'];
             if ($ok < 0 || $scrap < 0 || $ok + $scrap === 0) {
@@ -830,12 +1056,16 @@ try {
             $b = body();
             $id = idOrNull($b['id'] ?? null);
             $hid = idOrNull($b['hostelId'] ?? null);
-            if (!isAdmin($u)) {
-                $hid = $u['hostel_id'];
+            $mine = scopeIds($u);
+            if ($mine !== null && !in_array($hid, $mine, true)) {
+                if (count($mine) !== 1) {
+                    fail('Choose the unit or warehouse.');
+                }
+                $hid = $mine[0];
             }
             if ($id) {
                 $w = q("SELECT * FROM ha_warranties WHERE id=?", [$id])->fetch();
-                if (!$w || (!isAdmin($u) && (int) $w['hostel_id'] !== $u['hostel_id'])) {
+                if (!$w || ($mine !== null && !in_array((int) $w['hostel_id'], $mine, true))) {
                     fail('That warranty no longer exists.');
                 }
             }
@@ -879,6 +1109,7 @@ try {
             }
             $off = array_values(array_intersect(array_keys(TG_EVENTS), is_array($b['tgOff'] ?? null) ? $b['tgOff'] : []));
             $set = [
+                'org_name' => str($b['orgName'] ?? '', 120),
                 'tg_off' => implode(',', $off), 'daily_time' => $time,
                 'telegram_on' => empty($b['telegramOn']) ? '0' : '1', 'telegram_chat' => str($b['telegramChat'] ?? '', 60),
                 'app_url' => str($b['appUrl'] ?? '', 200),

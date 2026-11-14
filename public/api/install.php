@@ -5,7 +5,13 @@
  */
 declare(strict_types=1);
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
+
+/** Name of a Foundation's Central Warehouse (kept in step when the Foundation is renamed). */
+function warehouseName(string $foundation): string
+{
+    return mb_substr($foundation, 0, 95) . ' – Central Warehouse';
+}
 
 function ensureSchema(PDO $db): void
 {
@@ -50,7 +56,7 @@ function ensureSchema(PDO $db): void
         "CREATE TABLE IF NOT EXISTS ha_users (
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(120) NOT NULL, email VARCHAR(190) NOT NULL,
-            role VARCHAR(10) NOT NULL DEFAULT 'Warden', hostel_id INT NULL,
+            role VARCHAR(20) NOT NULL DEFAULT 'Unit', hostel_id INT NULL, foundation_id INT NULL,
             phone VARCHAR(40) NOT NULL DEFAULT '', active TINYINT(1) NOT NULL DEFAULT 1,
             password_hash VARCHAR(255) NULL, sample TINYINT(1) NOT NULL DEFAULT 0,
             UNIQUE KEY uq_user_email (email)
@@ -88,6 +94,12 @@ function ensureSchema(PDO $db): void
             KEY idx_w_exp (expiry_at)
         ) $E",
         "CREATE TABLE IF NOT EXISTS ha_settings (k VARCHAR(40) PRIMARY KEY, v TEXT NOT NULL) $E",
+        // v6: Organization → Foundations → Units. Each Foundation has one Central Warehouse (a ha_hostels row with kind 'warehouse').
+        "CREATE TABLE IF NOT EXISTS ha_foundations (
+            id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(120) NOT NULL, tg_chat VARCHAR(64) NOT NULL DEFAULT '',
+            active TINYINT(1) NOT NULL DEFAULT 1,
+            UNIQUE KEY uq_found_name (name)
+        ) $E",
     ];
     foreach ($tables as $sql) {
         $db->exec($sql);
@@ -124,6 +136,36 @@ function ensureSchema(PDO $db): void
 
     // v4: damage carries the approved quantity; older entries were approved in full.
     $db->exec("UPDATE ha_issues SET received_qty = qty WHERE kind = 'damage' AND status = 'done' AND received_qty IS NULL");
+
+
+    // v6: foundations, central warehouses, unit types, four roles, warranty categories, repair type.
+    $col = fn(string $t, string $c) => (bool) $db->query("SHOW COLUMNS FROM $t LIKE '$c'")->fetch();
+    if (!$col('ha_hostels', 'foundation_id')) {
+        $db->exec("ALTER TABLE ha_hostels ADD COLUMN foundation_id INT NULL AFTER id, ADD COLUMN kind VARCHAR(10) NOT NULL DEFAULT 'unit' AFTER foundation_id, ADD COLUMN unit_type VARCHAR(20) NOT NULL DEFAULT 'Hostel' AFTER kind");
+    }
+    if (!$col('ha_users', 'foundation_id')) {
+        $db->exec("ALTER TABLE ha_users MODIFY role VARCHAR(20) NOT NULL DEFAULT 'Unit', ADD COLUMN foundation_id INT NULL AFTER hostel_id");
+    }
+    $db->exec("UPDATE ha_users SET role = 'Unit' WHERE role = 'Warden'");
+    if (!$col('ha_categories', 'warranty')) {
+        $db->exec("ALTER TABLE ha_categories ADD COLUMN warranty TINYINT(1) NOT NULL DEFAULT 0");
+    }
+    if (!$col('ha_issues', 'repair_type')) {
+        $db->exec("ALTER TABLE ha_issues ADD COLUMN repair_type VARCHAR(10) NOT NULL DEFAULT '' AFTER place");
+        $db->exec("UPDATE ha_issues SET repair_type = 'External' WHERE kind = 'repair'");
+    }
+    if (!$col('ha_warranties', 'txn_id')) {
+        $db->exec("ALTER TABLE ha_warranties ADD COLUMN txn_id BIGINT NULL AFTER item_id");
+    }
+    // Existing hostels go under one Foundation (renamed later in Masters → Foundations).
+    if ((int) $db->query("SELECT COUNT(*) FROM ha_foundations")->fetchColumn() === 0) {
+        $db->exec("INSERT INTO ha_foundations (name) VALUES ('Main Foundation')");
+    }
+    $fid = (int) $db->query("SELECT MIN(id) FROM ha_foundations")->fetchColumn();
+    $db->exec("UPDATE ha_hostels SET foundation_id = $fid WHERE foundation_id IS NULL");
+    foreach ($db->query("SELECT f.id, f.name FROM ha_foundations f LEFT JOIN ha_hostels h ON h.foundation_id = f.id AND h.kind = 'warehouse' WHERE h.id IS NULL")->fetchAll() as $f) {
+        $db->prepare("INSERT INTO ha_hostels (foundation_id, kind, unit_type, name) VALUES (?, 'warehouse', '', ?)")->execute([$f['id'], warehouseName($f['name'])]);
+    }
 
     $db->prepare("REPLACE INTO ha_meta (k, v) VALUES ('schema', ?)")->execute([(string) SCHEMA_VERSION]);
 }

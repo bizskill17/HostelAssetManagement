@@ -30,6 +30,7 @@ const P = {
   trash: '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>',
   users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/>',
   download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
@@ -92,7 +93,7 @@ const addDays = (iso, n) => { const d = new Date(iso + "T00:00:00"); d.setDate(d
 
 /* ---------- derived data ---------- */
 const KIND = {
-  opening: { l: "Opening stock", c: "blue" }, in: { l: "Received", c: "green" }, transfer_in: { l: "Transfer in", c: "cyan" },
+  opening: { l: "Opening stock", c: "blue" }, in: { l: "Purchase", c: "green" }, transfer_in: { l: "Transfer in", c: "cyan" },
   transfer_out: { l: "Transfer out", c: "violet" }, repair_out: { l: "Sent for repair", c: "amber" },
   repair_return: { l: "Back from repair", c: "green" }, damaged: { l: "Damaged", c: "red" },
 };
@@ -109,13 +110,21 @@ const badge = (o, fallback) => `<span class="b ${o ? o.c : ""}">${esc(o ? o.l : 
 
 function derive() {
   const d = S.d;
-  M.admin = d.me.role === "Admin";
+  // Roles: Admin (everything + Masters/Settings), Organization (all Foundations and Units),
+  // Foundation (its Central Warehouse and Units), Unit (one Unit).
+  M.role = d.me.role;
+  M.admin = M.role === "Admin";
+  M.all = M.admin || M.role === "Organization";
   M.myH = d.me.hostelId;
+  M.myF = d.me.foundationId;
+  M.F = new Map((d.foundations || []).map((x) => [x.id, x]));
   M.H = new Map(d.hostels.map((x) => [x.id, x]));
   M.I = new Map(d.items.map((x) => [x.id, x]));
   M.C = new Map(d.categories.map((x) => [x.id, x]));
   M.U = new Map(d.users.map((x) => [x.id, x]));
-  M.scopeH = M.admin ? d.hostels.map((h) => h.id) : [M.myH];
+  M.scopeH = M.all ? d.hostels.map((h) => h.id) : M.role === "Foundation" ? d.hostels.filter((h) => h.foundationId === M.myF).map((h) => h.id) : [M.myH];
+  M.scopeSet = new Set(M.scopeH);
+  M.multi = M.scopeH.length > 1;
   const inv = new Map();
   const get = (h, i) => {
     const k = h + "|" + i;
@@ -133,21 +142,29 @@ function derive() {
   }
   for (const i of d.issues) {
     if (i.kind === "transfer" && i.status === "pending") {
-      if (M.admin || i.hostelId === M.myH) get(i.hostelId, i.itemId).pendingOut += i.qty;
-      if (M.admin || i.toHostelId === M.myH) get(i.toHostelId, i.itemId).pendingIn += i.qty;
+      if (inS(i.hostelId)) get(i.hostelId, i.itemId).pendingOut += i.qty;
+      if (inS(i.toHostelId)) get(i.toHostelId, i.itemId).pendingIn += i.qty;
     }
-    if (i.kind === "damage" && i.status === "pending" && (M.admin || i.hostelId === M.myH)) get(i.hostelId, i.itemId).pendingDmg += i.qty;
+    if (i.kind === "damage" && i.status === "pending" && inS(i.hostelId)) get(i.hostelId, i.itemId).pendingDmg += i.qty;
     if (i.kind === "repair" && (i.status === "at_repair" || i.status === "partly_returned")) get(i.hostelId, i.itemId).atRepair += i.qty - i.returnedQty - i.scrappedQty;
   }
   M.inv = inv;
-  M.incoming = d.issues.filter((i) => i.kind === "transfer" && i.status === "pending" && (M.admin || i.toHostelId === M.myH));
-  M.outgoing = d.issues.filter((i) => i.kind === "transfer" && i.status === "pending" && (M.admin || i.hostelId === M.myH));
+  M.incoming = d.issues.filter((i) => i.kind === "transfer" && i.status === "pending" && inS(i.toHostelId));
+  M.outgoing = d.issues.filter((i) => i.kind === "transfer" && i.status === "pending" && inS(i.hostelId));
   M.dmgPending = d.issues.filter((i) => i.kind === "damage" && i.status === "pending");
   M.openRepairs = d.issues.filter((i) => i.kind === "repair" && (i.status === "at_repair" || i.status === "partly_returned"));
   M.warr = d.warranties.map((w) => ({ ...w, daysLeft: daysBetween(today(), w.expiryAt) }));
   M.exp30 = M.warr.filter((w) => w.daysLeft >= 0 && w.daysLeft <= 30).length;
 }
 const hName = (id) => (M.H.get(id) || {}).name || "—";
+const inS = (id) => M.scopeSet.has(id);
+// Damage is approved by Admin, Organization, or the Foundation the unit / warehouse belongs to.
+const canApprove = (hid) => M.all || (M.role === "Foundation" && inS(hid));
+const isWh = (id) => (M.H.get(id) || {}).kind === "warehouse";
+const fName = (id) => (M.F.get(id) || {}).name || "—";
+const itemHasWarranty = (iid) => !!(M.C.get((M.I.get(iid) || {}).categoryId) || {}).warranty;
+// Units and Central Warehouses for dropdowns, grouped by Foundation (warehouse first).
+const locOpts = (ids) => S.d.hostels.filter((h) => ids.includes(h.id)).sort((a, b) => cmp(fName(a.foundationId), fName(b.foundationId)) || (b.kind === "warehouse") - (a.kind === "warehouse") || cmp(a.name, b.name)).map((h) => [h.id, h.name]);
 const iName = (id) => (M.I.get(id) || {}).name || "—";
 const iUnit = (id) => (M.I.get(id) || {}).unit || "";
 const iCat = (id) => (M.C.get((M.I.get(id) || {}).categoryId) || {}).name || "—";
@@ -185,7 +202,7 @@ function filterBar(key, defs, tabs = "") {
   const chips = active.length && !open ? `<div class="fchips">${active.map((d) => `<span class="fchip">${esc(label(d))}<button type="button" data-act="fchip" data-key="${key}" data-k="${d.k}" aria-label="Remove filter">${ic("x")}</button></span>`).join("")}</div>` : "";
   return `<div class="filters${open ? " fopen" : ""}${tabs ? " hastabs" : ""}">${search ? `<div class="srow">${ctl(search)}${tabs}${toggle}</div>` : tabs + toggle}<div class="fpanel">${rest.map(ctl).join("")}${any ? `<button class="clear" data-act="clearf" data-key="${key}">Clear all</button>` : ""}</div>${chips}</div>`;
 }
-const hostelOpts = () => S.d.hostels.filter((h) => M.scopeH.includes(h.id)).map((h) => [h.id, h.name]);
+const hostelOpts = () => locOpts(M.scopeH);
 const catOpts = () => S.d.categories.map((c) => [c.id, c.name]);
 const itemOpts = () => S.d.items.map((i) => [i.id, i.name]);
 const match = (q, ...vals) => !q || vals.some((v) => String(v ?? "").toLowerCase().includes(q.toLowerCase()));
@@ -254,7 +271,7 @@ function issueCard(i, extra = []) {
     tone: ISSUE_KIND[i.kind].c,
     title: `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(iName(i.itemId))}</span>`,
     qty: `${nf(i.qty)} <small>${esc(iUnit(i.itemId))}</small>`,
-    sub: `${esc(hName(i.hostelId))}${to ? " → " + esc(to) : ""}`,
+    sub: `${esc(hName(i.hostelId))}${to ? " → " + esc(to) : ""}${i.kind === "repair" && i.repairType === "Internal" ? " (internal)" : ""}`,
     meta: `<span class="mono">${esc(i.no)}</span> · ${fmtD(i.at)} · ${esc(uName(i.createdBy))}`,
     right: i.kind === "repair" && i.expectedAt && outstanding(i) > 0 ? `Back ${fmtD(i.expectedAt)}` : "",
     status: i.kind === "repair" && isOverdue(i) ? `<span class="b red">Overdue</span>` : badge(issueStatus(i)),
@@ -282,8 +299,8 @@ const head = (title, _sub, acts = "") => `<div class="ph"><div><h1>${esc(title)}
 const csvBtn = (key) => `<button class="btn dl" data-act="csv" data-key="${key}" title="Download as CSV">${ic("download")}<span class="l">Download</span></button>`;
 // Count cards appear only on the Dashboard.
 const stats = (list, onDashboard) => !onDashboard ? "" : `<div class="stats dash">${list.map((s) => `<div class="stat t-${s.tone || "brand"}${s.go ? " click" : ""}" ${s.go ? `data-go="${s.go}"` : ""}><div class="l">${esc(s.l)}</div><div class="v">${esc(s.v)}</div></div>`).join("")}</div>`;
-const scopeText = () => (M.admin ? `All ${S.d.hostels.length} hostels` : hName(M.myH));
-const canWriteHostel = (h) => M.admin || h === M.myH;
+const scopeText = () => (M.all ? `All ${S.d.foundations.length} foundation${S.d.foundations.length === 1 ? "" : "s"}` : M.role === "Foundation" ? fName(M.myF) : hName(M.myH));
+const canWriteHostel = (h) => inS(h);
 
 /* =================================================================== views */
 const V = {};
@@ -300,7 +317,7 @@ V.home = () => {
   const recent = S.d.txns.filter((t) => t.kind !== "opening").slice().sort((a, b) => b.createdAt - a.createdAt || b.id - a.id).slice(0, 8);
   const repairs = M.openRepairs.slice().sort((a, b) => cmp(a.expectedAt || "9999", b.expectedAt || "9999")).slice(0, 5);
   const warr = M.warr.filter((w) => w.daysLeft <= 90).sort((a, b) => a.daysLeft - b.daysLeft).slice(0, 5);
-  const byH = M.admin ? S.d.hostels.map((h) => ({ h, n: rows.filter((r) => r.hostelId === h.id).reduce((s, r) => s + r.current, 0) })) : [];
+  const byH = M.multi ? S.d.hostels.filter((h) => inS(h.id)).map((h) => ({ h, n: rows.filter((r) => r.hostelId === h.id).reduce((s, r) => s + r.current, 0) })) : [];
   const maxH = Math.max(1, ...byH.map((x) => x.n));
 
   const apprList = incoming.length ? `<ul class="list">${incoming.map((i) => `<li><div class="ic violet">${ic("move")}</div><div class="tx"><b>${esc(iName(i.itemId))} × ${nf(i.qty)} ${esc(iUnit(i.itemId))}</b><span>${esc(hName(i.hostelId))} → ${esc(hName(i.toHostelId))} · ${fmtD(i.at)} · <span class="mono">${esc(i.no)}</span></span></div><div class="rt acts">${canWriteHostel(i.toHostelId) ? `<button class="btn sm pri" data-act="receive" data-id="${i.id}">${ic("edit")}Update</button>` : ""}</div></li>`).join("")}</ul>`
@@ -309,9 +326,9 @@ V.home = () => {
     : `<div class="empty">${ic("inbox")}<div>No movements yet.</div></div>`;
   const repList = repairs.length ? `<ul class="list">${repairs.map((i) => `<li><div class="ic amber">${ic("wrench")}</div><div class="tx"><b>${esc(iName(i.itemId))} × ${nf(outstanding(i))}</b><span>${esc(hName(i.hostelId))}${i.place ? " · " + esc(i.place) : ""} · sent ${fmtD(i.at)}</span></div><div class="rt">${isOverdue(i) ? `<span class="b red">Overdue</span>` : i.expectedAt ? `<span class="b">Due ${fmtD(i.expectedAt)}</span>` : ""}</div></li>`).join("")}</ul>`
     : `<div class="empty">${ic("wrench")}<div>Nothing is at repair.</div></div>`;
-  const warList = warr.length ? `<ul class="list">${warr.map((w) => `<li><div class="ic ${w.daysLeft < 0 ? "red" : "amber"}">${ic("shield")}</div><div class="tx"><b>${esc(w.title || iName(w.itemId))}</b><span>${esc(w.hostelId ? hName(w.hostelId) : "All hostels")} · ${esc(w.warrantyNo || "No number")}</span></div><div class="rt">${daysBadge(w.daysLeft)}</div></li>`).join("")}</ul>`
+  const warList = warr.length ? `<ul class="list">${warr.map((w) => `<li><div class="ic ${w.daysLeft < 0 ? "red" : "amber"}">${ic("shield")}</div><div class="tx"><b>${esc(w.title || iName(w.itemId))}</b><span>${esc(w.hostelId ? hName(w.hostelId) : "All units")} · ${esc(w.warrantyNo || "No number")}</span></div><div class="rt">${daysBadge(w.daysLeft)}</div></li>`).join("")}</ul>`
     : `<div class="empty">${ic("shield")}<div>No warranties expire in the next 90 days.</div></div>`;
-  const hostelBars = M.admin ? `<div class="card"><div class="ch"><h3>Stock by hostel</h3><span class="sub">Current quantity</span></div><ul class="list">${byH.map((x) => `<li><div class="tx"><b class="lnk" data-act="invHostel" data-id="${x.h.id}">${esc(x.h.name)}</b><div style="height:8px;background:var(--line2);border-radius:99px;margin-top:7px;overflow:hidden"><div style="height:100%;width:${(x.n / maxH) * 100}%;background:linear-gradient(90deg,#5b7cfa,#2f54eb);border-radius:99px"></div></div></div><div class="rt strong" style="min-width:60px;font-weight:700">${nf(x.n)}</div></li>`).join("")}</ul></div>` : "";
+  const hostelBars = M.multi ? `<div class="card"><div class="ch"><h3>Stock by unit</h3><span class="sub">Current quantity</span></div><ul class="list">${byH.map((x) => `<li><div class="tx"><b class="lnk" data-act="invHostel" data-id="${x.h.id}">${esc(x.h.name)}</b><div style="height:8px;background:var(--line2);border-radius:99px;margin-top:7px;overflow:hidden"><div style="height:100%;width:${(x.n / maxH) * 100}%;background:linear-gradient(90deg,#5b7cfa,#2f54eb);border-radius:99px"></div></div></div><div class="rt strong" style="min-width:60px;font-weight:700">${nf(x.n)}</div></li>`).join("")}</ul></div>` : "";
 
   return head("Dashboard", `${esc(scopeText())} · ${fmtD(today())}`)
     + stats([
@@ -352,9 +369,9 @@ V.inventory = () => {
     .sort((a, b) => cmp(a.hostelId ? hName(a.hostelId) : "", b.hostelId ? hName(b.hostelId) : "") || cmp(iName(a.itemId), iName(b.itemId)));
   const sum = (k) => rows.reduce((s, r) => s + r[k], 0);
   const cols = [
-    { h: "Hostel", t: (r) => (r.hostelId ? hName(r.hostelId) : "All hostels"), cls: "nw" },
+    { h: "Unit", t: (r) => (r.hostelId ? hName(r.hostelId) : "All units"), cls: "nw" },
     { h: "Item", t: (r) => iName(r.itemId), html: (r) => `<span class="lnk" data-act="ledger" data-h="${r.hostelId || ""}" data-i="${r.itemId}">${esc(iName(r.itemId))}</span>` },
-    { h: "Unit", t: (r) => iUnit(r.itemId), cls: "dim" },
+    { h: "UoM", t: (r) => iUnit(r.itemId), cls: "dim" },
     { h: "Category", t: (r) => iCat(r.itemId), cls: "dim nw" },
     { h: "Opening", t: (r) => r.opening, num: 1, foot: () => nf(sum("opening")) },
     { h: "In", t: (r) => r.in, num: 1, html: (r) => r.in ? `<span class="qin">${nf(r.in)}</span>` : "0", foot: () => nf(sum("in")) },
@@ -365,9 +382,9 @@ V.inventory = () => {
     { h: "Damage pending", t: (r) => r.pendingDmg || "", num: 1, cls: "dim" },
     { h: "Transfer pending", t: (r) => (r.pendingOut ? `−${r.pendingOut}` : "") + (r.pendingOut && r.pendingIn ? " / " : "") + (r.pendingIn ? `+${r.pendingIn}` : ""), cls: "dim nw", nosort: 1 },
   ];
-  return head("Inventory", `${esc(combine ? "All hostels combined" : scopeText())} · click an item to see its history`, `${csvBtn("inventory")}<button class="btn pri" data-act="issue">${ic("plus")}<span class="l">Issue asset</span></button>`)
+  return head("Inventory", `${esc(combine ? "All units combined" : scopeText())} · click an item to see its history`, `${csvBtn("inventory")}<button class="btn pri" data-act="issue">${ic("plus")}<span class="l">Issue asset</span></button>`)
     + stats([
-      { v: nf(rows.length), l: combine ? "Items" : "Hostel × item lines" },
+      { v: nf(rows.length), l: combine ? "Items" : "Unit × item lines" },
       { v: nf(sum("opening")), l: "Opening count", tone: "slate" },
       { v: nf(sum("in")), l: "In count", tone: "green" },
       { v: nf(sum("issued")), l: "Issued count", tone: "violet" },
@@ -375,11 +392,11 @@ V.inventory = () => {
       { v: nf(sum("current")), l: "Current inventory", tone: "cyan" },
     ])
     + filterBar("inventory", [
-      { k: "q", type: "search", ph: "Search item, category or hostel" },
-      { k: "h", l: "Hostel", opts: hostelOpts(), all: "All hostels", hide: !M.admin },
+      { k: "q", type: "search", ph: "Search item, category or unit" },
+      { k: "h", l: "Unit", opts: hostelOpts(), all: "All units", hide: !M.multi },
       { k: "c", l: "Category", opts: catOpts(), all: "All categories" },
       { k: "stock", l: "Stock", opts: [["in", "In stock"], ["zero", "Zero stock"], ["moving", "At repair / transfer pending"]], all: "Any stock" },
-      { k: "view", l: "View", opts: [["all", "All hostels combined"]], all: "By hostel", hide: !M.admin },
+      { k: "view", l: "View", opts: [["all", "All units combined"]], all: "By unit", hide: !M.multi },
     ])
     + table("inventory", cols, rows, { nocards: 1, csv: "inventory", foot: 1, empty: "No stock yet. Add opening stock to get started." });
 };
@@ -388,12 +405,12 @@ V.inventory = () => {
 V.ledger = () => {
   const f = fv("ledger");
   const L = S.ledger;
-  if (!M.admin) L.h = String(M.myH);
+  if (!M.multi) L.h = String(M.scopeH[0]);
   if (!L.i && S.d.items.length) {
     const first = [...M.inv.values()].find((r) => M.scopeH.includes(r.hostelId));
-    if (first) { L.i = String(first.itemId); if (M.admin && !L.h) L.h = ""; }
+    if (first) { L.i = String(first.itemId); if (M.multi && !L.h) L.h = ""; }
   }
-  const hSel = M.admin ? `<select data-led="h"><option value="">All hostels</option>${hostelOpts().map(([v, l]) => `<option value="${v}"${String(v) === L.h ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>` : "";
+  const hSel = M.multi ? `<select data-led="h"><option value="">All units</option>${hostelOpts().map(([v, l]) => `<option value="${v}"${String(v) === L.h ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>` : "";
   const iSel = `<select data-led="i"><option value="">Choose an item</option>${itemOpts().map(([v, l]) => `<option value="${v}"${String(v) === L.i ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
   const bar = `<div class="filters">${hSel}${iSel}<label class="flab">From<input type="date" data-fkey="ledger" data-f="from" value="${esc(f.from || "")}"></label><label class="flab">To<input type="date" data-fkey="ledger" data-f="to" value="${esc(f.to || "")}"></label><div class="search">${ic("search")}<input class="inp" data-fkey="ledger" data-f="q" value="${esc(f.q || "")}" placeholder="Search entries"></div></div>`;
   if (!L.i) return head("Item ledger", "Every entry for one item, from opening stock to today") + bar + `<div class="card"><div class="empty">${ic("book")}<div>Choose an item to see its ledger.</div></div></div>`;
@@ -409,7 +426,7 @@ V.ledger = () => {
       { v: nf(balance), l: f.to ? `Balance on ${fmtD(f.to)}` : "Current balance", tone: "cyan" },
     ])
     + table("ledger", cols, shown, { tone: (t) => (KIND[t.kind] || {}).c || "slate", csv: `ledger-${(it.name || "item").replace(/\W+/g, "-")}${hid ? "-" + hName(hid).replace(/\W+/g, "-") : ""}`, all: 1,
-      title: `<div class="lhead"><div class="ic blue" style="width:40px;height:40px;border-radius:11px;display:grid;place-items:center">${ic("box")}</div><div><h2>${esc(it.name || "")}</h2><div class="meta">${esc(iCat(item))} · Unit: ${esc(it.unit || "")} · ${esc(hid ? hName(hid) : M.admin ? "All hostels" : hName(M.myH))}</div></div></div>`,
+      title: `<div class="lhead"><div class="ic blue" style="width:40px;height:40px;border-radius:11px;display:grid;place-items:center">${ic("box")}</div><div><h2>${esc(it.name || "")}</h2><div class="meta">${esc(iCat(item))} · Unit: ${esc(it.unit || "")} · ${esc(hid ? hName(hid) : M.multi ? "All units" : hName(M.myH))}</div></div></div>`,
       empty: "No entries for this item yet." });
 };
 
@@ -435,7 +452,7 @@ function ledgerModel(item, hid, f) {
   const open = rows.filter((t) => t.kind === "opening").reduce((s, t) => s + t.qty, 0) + (rows[0] && rows[0].kind === "bf" ? bf : 0);
   const cols = [
     { h: "Date", t: (t) => t.at, html: (t) => fmtD(t.at), cls: "nw" },
-    { h: "Hostel", t: (t) => (t.kind === "bf" ? "" : hName(t.hostelId)), cls: "nw" },
+    { h: "Unit", t: (t) => (t.kind === "bf" ? "" : hName(t.hostelId)), cls: "nw" },
     { h: "Entry", t: (t) => (t.kind === "bf" ? "Balance brought forward" : KIND[t.kind].l), html: (t) => (t.kind === "bf" ? "<b>Balance brought forward</b>" : badge(KIND[t.kind])) },
     { h: "Reference", t: (t) => issueNo(t.issueId), html: (t) => `<span class="mono">${esc(issueNo(t.issueId))}</span>` },
     { h: "From / to", t: party, cls: "nw" },
@@ -465,9 +482,9 @@ function drawHist() {
   if (!box || !S.hist) return;
   const { item, hid, f } = S.hist;
   const it = M.I.get(item) || {};
-  const where = hid ? hName(hid) : M.admin ? "All hostels" : hName(M.myH);
+  const where = hid ? hName(hid) : M.multi ? "All units" : hName(M.scopeH[0]);
   const m = ledgerModel(item, hid, f);
-  const hostelSel = M.admin ? `<select data-hist="hid"><option value="">All hostels</option>${hostelOpts().map(([v, l]) => `<option value="${v}"${v === hid ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>` : "";
+  const hostelSel = M.multi ? `<select data-hist="hid"><option value="">All units</option>${hostelOpts().map(([v, l]) => `<option value="${v}"${v === hid ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>` : "";
   const keep = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.hist : null;
   box.innerHTML = `<div class="dh"><div style="display:flex;gap:12px;align-items:center"><div class="ic blue" style="width:42px;height:42px;border-radius:12px;display:grid;place-items:center;flex:none">${ic("book")}</div><div><h2>${esc(it.name || "")}</h2><p>${esc(iCat(item))} · Unit: ${esc(it.unit || "")} · ${esc(where)}</p></div></div><button type="button" class="iconbtn" data-act="closehist" aria-label="Close">${ic("x")}</button></div>
     <div class="hbody">
@@ -494,26 +511,28 @@ V.stock = () => {
   const sum = (k) => rows.filter((t) => !k || t.kind === k).reduce((s, t) => s + t.qty, 0);
   const cols = [
     { h: "Date", t: (t) => t.at, html: (t) => fmtD(t.at), cls: "nw" },
-    { h: "Hostel", t: (t) => hName(t.hostelId), cls: "nw" },
+    { h: "Unit", t: (t) => hName(t.hostelId), cls: "nw" },
     { h: "Item", t: (t) => iName(t.itemId), html: (t) => `<span class="lnk" data-act="ledger" data-h="${t.hostelId}" data-i="${t.itemId}">${esc(iName(t.itemId))}</span>` },
     { h: "Type", t: (t) => KIND[t.kind].l, html: (t) => badge(KIND[t.kind]) },
     { h: "Qty", t: (t) => t.qty, num: 1, html: (t) => `<span class="qin">${nf(t.qty)}</span>` },
-    { h: "Unit", t: (t) => iUnit(t.itemId), cls: "dim" },
+    { h: "UoM", t: (t) => iUnit(t.itemId), cls: "dim" },
+    { h: "Supplier", t: (t) => t.party || "", cls: "wrap" },
+    { h: "Warranty till", t: (t) => (S.d.warranties.find((w) => w.txnId === t.id) || {}).expiryAt || "", html: (t) => { const w = S.d.warranties.find((x) => x.txnId === t.id); return w ? fmtD(w.expiryAt) : `<span class="dim">—</span>`; }, cls: "nw" },
     { h: "Notes", t: (t) => t.notes || "", cls: "wrap" },
     { h: "Entered by", t: (t) => uName(t.createdBy), cls: "dim nw" },
   ];
   if (M.admin) cols.push({ h: "", t: () => "", nocsv: 1, nosort: 1, html: (t) => `<div class="rowacts">${ab("deltxn", t.id, "trash", "Delete", "red")}</div>` });
-  return head("Stock in", "Opening stock and items received at each hostel", `${csvBtn("stock")}<button class="btn pri" data-act="stockin">${ic("plus")}<span class="l">Add stock</span></button>`)
+  return head("Stock in", "Purchases and opening stock at each unit and warehouse", `${csvBtn("stock")}<button class="btn" data-act="bulkup" title="Opening stock bulk upload">${ic("upload")}<span class="l">Bulk upload</span></button><button class="btn pri" data-act="stockin">${ic("plus")}<span class="l">Add stock</span></button>`)
     + stats([
       { v: nf(rows.length), l: "Entries" },
       { v: nf(sum("opening")), l: "Opening quantity", tone: "slate" },
-      { v: nf(sum("in")), l: "Received quantity", tone: "green" },
+      { v: nf(sum("in")), l: "Purchased quantity", tone: "green" },
       { v: nf(new Set(rows.map((t) => t.itemId)).size), l: "Items", tone: "cyan" },
     ])
     + filterBar("stock", [
       { k: "q", type: "search", ph: "Search item, supplier or notes" },
-      { k: "h", l: "Hostel", opts: hostelOpts(), all: "All hostels", hide: !M.admin },
-      { k: "kind", l: "Type", opts: [["opening", "Opening stock"], ["in", "Received"]], all: "All types" },
+      { k: "h", l: "Unit", opts: hostelOpts(), all: "All units", hide: !M.multi },
+      { k: "kind", l: "Type", opts: [["in", "Purchase"], ["opening", "Opening stock"]], all: "All types" },
       { k: "c", l: "Category", opts: catOpts(), all: "All categories" },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
     ])
@@ -526,7 +545,7 @@ function issueCols(withActs = true) {
     { h: "No.", t: (i) => i.no, html: (i) => `<span class="mono">${esc(i.no)}</span>`, cls: "nw" },
     { h: "Date", t: (i) => i.at, html: (i) => fmtD(i.at), cls: "nw" },
     { h: "Type", t: (i) => ISSUE_KIND[i.kind].l, html: (i) => badge(ISSUE_KIND[i.kind]) },
-    { h: "From hostel", t: (i) => hName(i.hostelId), cls: "nw" },
+    { h: "From", t: (i) => hName(i.hostelId), cls: "nw" },
     { h: "Item", t: (i) => iName(i.itemId), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(iName(i.itemId))}</span>` },
     { h: "Qty", t: (i) => i.qty, num: 1, html: (i) => `<b>${nf(i.qty)}</b> <span class="dim">${esc(iUnit(i.itemId))}</span>` },
     { h: "Received", t: (i) => (i.kind === "transfer" && i.receivedQty != null ? i.receivedQty : ""), num: 1, html: recvHtml },
@@ -553,7 +572,7 @@ function issueActs(i) {
     if (canWriteHostel(i.hostelId)) b.push(ab("cancel", i.id, "x", "Cancel", "slate"));
   }
   if (i.kind === "damage" && i.status === "pending") {
-    if (M.admin) b.push(ab("dmgok", i.id, "tick", "Approve", "green") + ab("dmgno", i.id, "ban", "Reject", "orange"));
+    if (canApprove(i.hostelId)) b.push(ab("dmgok", i.id, "tick", "Approve", "green") + ab("dmgno", i.id, "ban", "Reject", "orange"));
     else if (canWriteHostel(i.hostelId)) b.push(ab("cancel", i.id, "x", "Cancel", "slate"));
   }
   if (i.kind === "repair" && outstanding(i) > 0 && (i.status === "at_repair" || i.status === "partly_returned") && canWriteHostel(i.hostelId)) b.push(ab("return", i.id, "undo", "Record return", "green"));
@@ -581,9 +600,9 @@ V.issues = () => {
       { v: nf(rows.filter((i) => !["void", "rejected", "cancelled"].includes(i.status)).reduce((s, i) => s + i.qty, 0)), l: "Quantity issued", tone: "slate" },
     ])
     + filterBar("issues", [
-      { k: "q", type: "search", ph: "Search no., item, hostel or notes" },
+      { k: "q", type: "search", ph: "Search no., item, unit or notes" },
       { k: "st", l: "Status", opts: Object.entries(STATUS).map(([k, v]) => [k, v.l]), all: "All statuses" },
-      { k: "h", l: "Hostel", opts: S.d.hostels.map((h) => [h.id, h.name]), all: "All hostels", hide: !M.admin },
+      { k: "h", l: "Unit", opts: hostelOpts(), all: "All units", hide: !M.multi },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
     ], tabs)
     + table("issues", issueCols(), rows, { card: (i) => issueCard(i), csv: "issue-register", empty: "No issues yet." });
@@ -608,10 +627,10 @@ function approvalsView(key) {
   const cols = [
     { h: "No.", t: (i) => i.no, html: (i) => `<span class="mono">${esc(i.no)}</span>`, cls: "nw" },
     { h: "Sent on", t: (i) => i.at, html: (i) => fmtD(i.at), cls: "nw" },
-    { h: "From hostel", t: (i) => hName(i.hostelId), cls: "nw" },
-    { h: "To hostel", t: (i) => hName(i.toHostelId), cls: "nw" },
+    { h: "From", t: (i) => hName(i.hostelId), cls: "nw" },
+    { h: "To", t: (i) => hName(i.toHostelId), cls: "nw" },
     { h: "Item", t: (i) => iName(i.itemId), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.toHostelId}" data-i="${i.itemId}">${esc(iName(i.itemId))}</span>` },
-    { h: "Unit", t: (i) => iUnit(i.itemId), cls: "dim" },
+    { h: "UoM", t: (i) => iUnit(i.itemId), cls: "dim" },
     { h: "Send qty", t: (i) => i.qty, num: 1, html: (i) => `<b>${nf(i.qty)}</b>` },
     { h: "Received qty", t: (i) => i.receivedQty ?? "", num: 1, html: recvHtml },
     { h: "Short", t: short, num: 1, html: (i) => (short(i) ? `<span class="qout">${nf(short(i))}</span>` : i.receivedQty == null ? "" : "0") },
@@ -624,9 +643,9 @@ function approvalsView(key) {
   // Waiting/sent pages only hold transfers still awaiting receipt, so the status filter is only on All transfers.
   return head(A.title, "", csvBtn(key))
     + filterBar(key, [
-      { k: "q", type: "search", ph: "Search no., item or hostel" },
+      { k: "q", type: "search", ph: "Search no., item or unit" },
       { k: "st", l: "Status", opts: [["pending", "Awaiting receipt"], ["received", "Received"], ["short", "Received short"], ["rejected", "Not received"], ["cancelled", "Cancelled"]], all: "All statuses", hide: A.show !== "all" },
-      { k: "h", l: "Hostel", opts: S.d.hostels.map((h) => [h.id, h.name]), all: "All hostels", hide: !M.admin },
+      { k: "h", l: "Unit", opts: hostelOpts(), all: "All units", hide: !M.multi },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
     ])
     + table(key, cols, rows, { card: (i) => issueCard(i), csv: A.csv, emptyIcon: "check", empty: A.empty });
@@ -642,22 +661,22 @@ V.damage = () => {
   const cols = [
     { h: "No.", t: (i) => i.no, html: (i) => `<span class="mono">${esc(i.no)}</span>`, cls: "nw" },
     { h: "Date", t: (i) => i.at, html: (i) => fmtD(i.at), cls: "nw" },
-    { h: "Hostel", t: (i) => hName(i.hostelId), cls: "nw" },
+    { h: "Unit", t: (i) => hName(i.hostelId), cls: "nw" },
     { h: "Item", t: (i) => iName(i.itemId), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(iName(i.itemId))}</span>` },
-    { h: "Unit", t: (i) => iUnit(i.itemId), cls: "dim" },
+    { h: "UoM", t: (i) => iUnit(i.itemId), cls: "dim" },
     { h: "Reported qty", t: (i) => i.qty, num: 1, html: (i) => `<b>${nf(i.qty)}</b>` },
     { h: "Approved qty", t: (i) => i.receivedQty ?? "", num: 1, html: (i) => (i.receivedQty == null ? `<span class="dim">—</span>` : i.receivedQty < i.qty ? `<span class="qout">${nf(i.receivedQty)}</span>` : nf(i.receivedQty)) },
     { h: "Sent to", t: (i) => i.place || "", cls: "nw" },
     { h: "Status", t: (i) => issueStatus(i).l, html: (i) => badge(issueStatus(i)) },
     { h: "Reported by", t: (i) => uName(i.createdBy), cls: "dim nw" },
     { h: "Decided", t: (i) => (i.decidedAt && i.status !== "pending" ? fmtTs(i.decidedAt) + " · " + uName(i.decidedBy) : ""), cls: "dim nw" },
-    { h: "Notes", t: (i) => [i.notes, i.decisionNote && "Admin: " + i.decisionNote].filter(Boolean).join(" · "), cls: "wrap" },
+    { h: "Notes", t: (i) => [i.notes, i.decisionNote && "Note: " + i.decisionNote].filter(Boolean).join(" · "), cls: "wrap" },
     { h: "", t: () => "", nocsv: 1, nosort: 1, html: issueActs },
   ];
   return head("Damage", "", `${csvBtn("damage")}<button class="btn pri" data-act="issue" data-kind="damage">${ic("plus")}<span class="l">Mark damaged</span></button>`)
     + filterBar("damage", [
-      { k: "q", type: "search", ph: "Search no., item, hostel or notes" },
-      { k: "h", l: "Hostel", opts: hostelOpts(), all: "All hostels", hide: !M.admin },
+      { k: "q", type: "search", ph: "Search no., item, unit or notes" },
+      { k: "h", l: "Unit", opts: hostelOpts(), all: "All units", hide: !M.multi },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
     ])
     + table("damage", cols, rows, { card: (i) => issueCard(i), csv: "damage-approvals", emptyIcon: "alert", empty: "No damage waiting for approval." });
@@ -679,7 +698,7 @@ function damageDecideForm(id, approve) {
   } else {
     openForm({
       title: "Reject damage", sub: `${esc(iName(i.itemId))} · ${esc(hName(i.hostelId))}`, danger: true,
-      fields: [{ k: "reported", l: "Reported qty", type: "text", val: `${nf(i.qty)} ${u}`, ro: 1 }, { k: "note", l: "Reason", type: "textarea", req: 1, ph: "Tell the hostel why" }],
+      fields: [{ k: "reported", l: "Reported qty", type: "text", val: `${nf(i.qty)} ${u}`, ro: 1 }, { k: "note", l: "Reason", type: "textarea", req: 1, ph: "Tell them why" }],
       submit: "Reject",
       onSubmit: async (v) => { await api("damage.decide", { id, decision: "reject", note: v.note }); return `${i.no} rejected`; },
     });
@@ -693,14 +712,15 @@ function repairsView(key, pendingOnly) {
   const st = pendingOnly ? f.st || "open" : f.st ?? "";
   const rows = S.d.issues.filter((i) => i.kind === "repair" && i.status !== "void")
     .filter((i) => st === "" || (st === "open" ? outstanding(i) > 0 && i.status !== "closed" : st === "overdue" ? isOverdue(i) : i.status === "closed"))
-    .filter((i) => (!f.h || i.hostelId === +f.h) && inRange(i.at, f) && match(f.q, i.no, iName(i.itemId), hName(i.hostelId), i.place, i.notes));
+    .filter((i) => (!f.h || i.hostelId === +f.h) && (!f.rt || (i.repairType || "External") === f.rt) && inRange(i.at, f) && match(f.q, i.no, iName(i.itemId), hName(i.hostelId), i.place, i.notes));
   const open = M.openRepairs;
   const cols = [
     { h: "No.", t: (i) => i.no, html: (i) => `<span class="mono">${esc(i.no)}</span>`, cls: "nw" },
     { h: "Sent on", t: (i) => i.at, html: (i) => fmtD(i.at), cls: "nw" },
-    { h: "Hostel", t: (i) => hName(i.hostelId), cls: "nw" },
+    { h: "Unit", t: (i) => hName(i.hostelId), cls: "nw" },
     { h: "Item", t: (i) => iName(i.itemId), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(iName(i.itemId))}</span>` },
-    { h: "Sent to", t: (i) => i.place || "", cls: "nw" },
+    { h: "Repair type", t: (i) => i.repairType || "External", html: (i) => `<span class="b ${i.repairType === "Internal" ? "cyan" : "violet"}">${esc(i.repairType || "External")}</span>` },
+    { h: "Repairer", t: (i) => i.place || "", cls: "nw" },
     { h: "Sent", t: (i) => i.qty, num: 1 },
     { h: "Returned", t: (i) => i.returnedQty, num: 1, html: (i) => (i.returnedQty ? `<span class="qin">${nf(i.returnedQty)}</span>` : "0") },
     { h: "Not repairable", t: (i) => i.scrappedQty, num: 1, html: (i) => (i.scrappedQty ? `<span class="qout">${nf(i.scrappedQty)}</span>` : "0") },
@@ -723,7 +743,8 @@ function repairsView(key, pendingOnly) {
       { k: "q", type: "search", ph: "Search no., item, repairer or notes" },
       pendingOnly ? { k: "st", l: "Status", opts: [["overdue", "Overdue only"]], all: "Still at repair" }
         : { k: "st", l: "Status", opts: [["open", "Still at repair"], ["overdue", "Overdue"], ["closed", "Closed"]], all: "All repairs" },
-      { k: "h", l: "Hostel", opts: hostelOpts(), all: "All hostels", hide: !M.admin },
+      { k: "rt", l: "Repair type", opts: [["External", "External"], ["Internal", "Internal"]], all: "Internal and external" },
+      { k: "h", l: "Unit", opts: hostelOpts(), all: "All units", hide: !M.multi },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
     ])
     + table(key, cols, rows, { card: (i) => ({ ...issueCard(i, [["Returned", nf(i.returnedQty)], ["Still out", nf(outstanding(i))], ["Not repairable", i.scrappedQty ? nf(i.scrappedQty) : ""]]), right: i.expectedAt ? `Back ${fmtD(i.expectedAt)}` : "" }), csv: pendingOnly ? "repairs-pending" : "repairs-all", emptyIcon: "wrench", empty: st === "open" ? "Nothing is at repair right now." : "No repairs to show." });
@@ -744,11 +765,11 @@ V.damaged = () => {
   const cols = [
     { h: "Date", t: (t) => t.at, html: (t) => fmtD(t.at), cls: "nw" },
     { h: "Reference", t: (t) => issueNo(t.issueId), html: (t) => `<span class="mono">${esc(issueNo(t.issueId))}</span>` },
-    { h: "Hostel", t: (t) => hName(t.hostelId), cls: "nw" },
+    { h: "Unit", t: (t) => hName(t.hostelId), cls: "nw" },
     { h: "Item", t: (t) => iName(t.itemId), html: (t) => `<span class="lnk" data-act="ledger" data-h="${t.hostelId}" data-i="${t.itemId}">${esc(iName(t.itemId))}</span>` },
     { h: "Category", t: (t) => iCat(t.itemId), cls: "dim nw" },
     { h: "Qty", t: (t) => t.qty, num: 1, html: (t) => `<span class="qout">${nf(t.qty)}</span>` },
-    { h: "Unit", t: (t) => iUnit(t.itemId), cls: "dim" },
+    { h: "UoM", t: (t) => iUnit(t.itemId), cls: "dim" },
     { h: "Sent to", t: (t) => t.party || "", cls: "nw" },
     { h: "Notes", t: (t) => t.notes || "", cls: "wrap" },
     { h: "Entered by", t: (t) => uName(t.createdBy), cls: "dim nw" },
@@ -762,7 +783,7 @@ V.damaged = () => {
     ])
     + filterBar("damaged", [
       { k: "q", type: "search", ph: "Search item, notes or destination" },
-      { k: "h", l: "Hostel", opts: hostelOpts(), all: "All hostels", hide: !M.admin },
+      { k: "h", l: "Unit", opts: hostelOpts(), all: "All units", hide: !M.multi },
       { k: "c", l: "Category", opts: catOpts(), all: "All categories" },
       { k: "p", l: "Sent to", opts: places.map((p) => [p, p]), all: "Any destination" },
       { k: "from", type: "date", l: "From" }, { k: "to", type: "date", l: "To" },
@@ -780,7 +801,7 @@ V.warranties = () => {
   const cols = [
     { h: "Item", t: (w) => w.title || iName(w.itemId), html: (w) => `<b>${esc(w.title || iName(w.itemId))}</b>${w.title && w.itemId ? `<div class="dim" style="font-size:12px">${esc(iName(w.itemId))}</div>` : ""}` },
     { h: "Category", t: (w) => (M.C.get(w.categoryId) || {}).name || "", cls: "dim nw" },
-    { h: "Hostel", t: (w) => (w.hostelId ? hName(w.hostelId) : "All hostels"), cls: "nw" },
+    { h: "Unit", t: (w) => (w.hostelId ? hName(w.hostelId) : "All units"), cls: "nw" },
     { h: "Warranty no.", t: (w) => w.warrantyNo || "", html: (w) => `<span class="mono">${esc(w.warrantyNo || "")}</span>` },
     { h: "Supplier", t: (w) => w.supplier || "", cls: "nw" },
     { h: "Qty", t: (w) => w.qty ?? "", num: 1 },
@@ -803,7 +824,7 @@ V.warranties = () => {
       { k: "q", type: "search", ph: "Search item, warranty no. or supplier" },
       { k: "st", l: "Status", opts: [["30", "Expiring in 30 days"], ["90", "Expiring in 90 days"], ["exp", "Expired"], ["ok", "Active, over 90 days"]], all: "Any status" },
       { k: "c", l: "Category", opts: catOpts(), all: "All categories" },
-      { k: "h", l: "Hostel", opts: hostelOpts(), all: "All hostels", hide: !M.admin },
+      { k: "h", l: "Unit", opts: hostelOpts(), all: "All units", hide: !M.multi },
     ])
     + table("warranties", cols, rows, { nocards: 1, csv: "warranties", emptyIcon: "shield", empty: "No warranties yet." });
 };
@@ -817,20 +838,40 @@ function unitOpts(current) {
   return names.sort(cmp).map((n) => [n, n]);
 }
 const MASTERS = {
-  hostels: {
-    title: "Hostels", one: "hostel", sub: "Each hostel keeps its own stock", icon: "building",
-    rows: () => S.d.hostels,
-    search: (r) => [r.name, r.address],
+  foundations: {
+    title: "Foundations", one: "foundation", sub: "Each Foundation has its own Central Warehouse and its units", icon: "building",
+    rows: () => S.d.foundations,
+    search: (r) => [r.name],
     cols: [
-      { h: "Hostel", t: (r) => r.name, html: (r) => `<span class="lnk" data-act="invHostel" data-id="${r.id}">${esc(r.name)}</span>` },
+      { h: "Foundation", t: (r) => r.name, cls: "strong" },
+      { h: "Central Warehouse", t: (r) => (S.d.hostels.find((h) => h.kind === "warehouse" && h.foundationId === r.id) || {}).name || "", html: (r) => { const w = S.d.hostels.find((h) => h.kind === "warehouse" && h.foundationId === r.id); return w ? `<span class="lnk" data-act="invHostel" data-id="${w.id}">${esc(w.name)}</span>` : "—"; } },
+      { h: "Units", t: (r) => S.d.hostels.filter((h) => h.kind === "unit" && h.foundationId === r.id).length, num: 1 },
+      { h: "Telegram group", t: (r) => r.tgChat || "", html: (r) => (r.tgChat ? `<span class="b green">Connected</span>` : `<span class="dim">—</span>`) },
+      { h: "Status", t: (r) => (r.active ? "Active" : "Inactive"), html: (r) => (r.active ? `<span class="b green">Active</span>` : `<span class="b">Inactive</span>`) },
+    ],
+    fields: [{ k: "name", l: "Foundation name", req: 1, help: "Its Central Warehouse is created and named automatically." },
+      { k: "tgChat", l: "Telegram group ID", ph: "-1001234567890", help: () => "This group gets the messages of this Foundation's warehouse and all its units. Leave blank to use only the main group." },
+      { k: "active", l: "Active", type: "check", val: true }],
+  },
+  hostels: {
+    title: "Units", one: "unit", sub: "Hostels and colleges; each keeps its own stock", icon: "building",
+    rows: () => S.d.hostels.filter((h) => h.kind === "unit"),
+    search: (r) => [r.name, r.address, r.unitType, fName(r.foundationId)],
+    cols: [
+      { h: "Unit", t: (r) => r.name, html: (r) => `<span class="lnk" data-act="invHostel" data-id="${r.id}">${esc(r.name)}</span>` },
+      { h: "Type", t: (r) => r.unitType, html: (r) => `<span class="b ${r.unitType === "College" ? "cyan" : "violet"}">${esc(r.unitType)}</span>` },
+      { h: "Foundation", t: (r) => fName(r.foundationId), cls: "nw" },
       { h: "Address", t: (r) => r.address, cls: "wrap" },
       { h: "Telegram group", t: (r) => r.tgChat || "", html: (r) => (r.tgChat ? `<span class="b green">Connected</span>` : `<span class="dim">—</span>`) },
-      { h: "Wardens", t: (r) => S.d.users.filter((u) => u.hostelId === r.id && u.role === "Warden").map((u) => u.name).join(", "), cls: "wrap" },
+      { h: "Unit users", t: (r) => S.d.users.filter((u) => u.hostelId === r.id && u.role === "Unit").map((u) => u.name).join(", "), cls: "wrap" },
       { h: "Items in stock", t: (r) => [...M.inv.values()].filter((x) => x.hostelId === r.id).reduce((s, x) => s + x.current, 0), num: 1 },
       { h: "Status", t: (r) => (r.active ? "Active" : "Inactive"), html: (r) => (r.active ? `<span class="b green">Active</span>` : `<span class="b">Inactive</span>`) },
     ],
-    fields: [{ k: "name", l: "Hostel name", req: 1 }, { k: "address", l: "Address / location" },
-      { k: "tgChat", l: "Telegram group ID", ph: "-1001234567890", help: () => "This hostel's own group gets only this hostel's messages. Leave blank to use only the main group." },
+    fields: [{ k: "name", l: "Unit name", req: 1 },
+      { k: "foundationId", l: "Foundation", type: "select", req: 1, half: 1, opts: () => S.d.foundations.map((f) => [f.id, f.name]), blank: "— Choose foundation —", val: () => (S.d.foundations.length === 1 ? String(S.d.foundations[0].id) : "") },
+      { k: "unitType", l: "Unit type", type: "seg", half: 1, opts: () => [["Hostel", "Hostel"], ["College", "College"]], val: "Hostel" },
+      { k: "address", l: "Address / location" },
+      { k: "tgChat", l: "Telegram group ID", ph: "-1001234567890", help: () => "This unit's own group gets only this unit's messages. Leave blank to use only the main and Foundation groups." },
       { k: "active", l: "Active (can receive transfers)", type: "check", val: true }],
   },
   items: {
@@ -840,26 +881,29 @@ const MASTERS = {
     cols: [
       { h: "Item", t: (r) => r.name, html: (r) => `<span class="lnk" data-act="ledger" data-h="" data-i="${r.id}">${esc(r.name)}</span>` },
       { h: "Category", t: (r) => iCat(r.id), cls: "nw" },
-      { h: "Unit", t: (r) => r.unit },
+      { h: "UoM", t: (r) => r.unit },
       { h: "Total stock", t: (r) => [...M.inv.values()].filter((x) => x.itemId === r.id).reduce((s, x) => s + x.current, 0), num: 1 },
       { h: "Notes", t: (r) => r.notes, cls: "wrap" },
       { h: "Status", t: (r) => (r.active ? "Active" : "Inactive"), html: (r) => (r.active ? `<span class="b green">Active</span>` : `<span class="b">Inactive</span>`) },
     ],
     fields: [{ k: "name", l: "Item name", req: 1, ph: "e.g. Single bed, steel" },
       { k: "categoryId", l: "Category", type: "select", half: 1, opts: () => catOpts(), blank: "— None —", add: ADD_CATEGORY },
-      { k: "unit", l: "Unit", type: "select", half: 1, val: "Nos", opts: (v) => unitOpts(v.unit), add: ADD_UNIT },
+      { k: "unit", l: "Measuring unit", type: "select", half: 1, val: "Nos", opts: (v) => unitOpts(v.unit), add: ADD_UNIT },
       { k: "notes", l: "Notes" }, { k: "active", l: "Active (shown in forms)", type: "check", val: true }],
   },
   categories: {
     title: "Categories", one: "category", sub: "Groups for items and warranties", icon: "folder",
     rows: () => S.d.categories, search: (r) => [r.name],
-    cols: [{ h: "Category", t: (r) => r.name, cls: "strong" }, { h: "Items", t: (r) => S.d.items.filter((i) => i.categoryId === r.id).length, num: 1 }],
-    fields: [{ k: "name", l: "Category name", req: 1 }],
+    cols: [{ h: "Category", t: (r) => r.name, cls: "strong" },
+      { h: "Warranty applicable", t: (r) => (r.warranty ? "Yes" : "No"), html: (r) => (r.warranty ? `<span class="b green">Yes</span>` : `<span class="dim">No</span>`) },
+      { h: "Items", t: (r) => S.d.items.filter((i) => i.categoryId === r.id).length, num: 1 }],
+    fields: [{ k: "name", l: "Category name", req: 1 },
+      { k: "warranty", l: "Warranty applicable", type: "check", val: false, help: "Items in this category ask for warranty details at Stock in, and are issued one piece at a time." }],
   },
   units: {
-    title: "Units", one: "unit", sub: "Units items are counted in", icon: "box", coll: "units",
+    title: "Measuring units", one: "measuring unit", sub: "What items are counted in (Nos, Sets, Kg…)", icon: "box", coll: "units",
     rows: () => S.d.units || [], search: (r) => [r.name],
-    cols: [{ h: "Unit", t: (r) => r.name, cls: "strong" }, { h: "Items", t: (r) => S.d.items.filter((i) => i.unit === r.name).length, num: 1 }],
+    cols: [{ h: "Measuring unit", t: (r) => r.name, cls: "strong" }, { h: "Items", t: (r) => S.d.items.filter((i) => i.unit === r.name).length, num: 1 }],
     fields: [{ k: "name", l: "Unit", req: 1, ph: "e.g. Nos, Sets, Kg" }],
   },
   places: {
@@ -869,56 +913,61 @@ const MASTERS = {
     fields: [{ k: "name", l: "Destination", req: 1, ph: "e.g. Scrap dealer" }],
   },
   users: {
-    title: "Users", one: "user", sub: "Admins see every hostel; wardens see only their own hostel", icon: "users",
-    rows: () => S.d.users, search: (r) => [r.name, r.email, r.role, r.hostelId ? hName(r.hostelId) : "", r.phone],
+    title: "Users", one: "user", sub: "Admin: everything · Organization: all foundations · Foundation: its warehouse and units · Unit: one unit", icon: "users",
+    rows: () => S.d.users, search: (r) => [r.name, r.email, r.role, userScope(r), r.phone],
     cols: [
       { h: "Name", t: (r) => r.name, html: (r) => `<div style="display:flex;align-items:center;gap:9px"><span class="av" style="width:30px;height:30px;font-size:11px">${esc(initials(r.name))}</span><b>${esc(r.name)}</b></div>` },
       { h: "Email", t: (r) => r.email || "" },
-      { h: "Role", t: (r) => r.role, html: (r) => `<span class="b ${r.role === "Admin" ? "violet" : "blue"}">${esc(r.role)}</span>` },
-      { h: "Hostel", t: (r) => (r.role === "Admin" ? "All hostels" : hName(r.hostelId)), cls: "nw" },
+      { h: "Role", t: (r) => r.role, html: (r) => `<span class="b ${{ Admin: "violet", Organization: "blue", Foundation: "cyan", Unit: "green" }[r.role] || ""}">${esc(r.role)}</span>` },
+      { h: "Looks after", t: (r) => userScope(r), cls: "nw" },
       { h: "Phone", t: (r) => r.phone || "", cls: "nw" },
       { h: "Can sign in", t: (r) => (r.hasLogin && r.active ? "Yes" : "No"), html: (r) => (!r.active ? `<span class="b">Inactive</span>` : r.hasLogin ? `<span class="b green">Yes</span>` : `<span class="b amber">No password</span>`) },
     ],
     fields: [
       { k: "name", l: "Full name", req: 1 }, { k: "email", l: "Email (used to sign in)", type: "email", req: 1 },
-      { k: "role", l: "Role", type: "seg", opts: () => [["Warden", "Warden"], ["Admin", "Admin"]], val: "Warden" },
-      { k: "hostelId", l: "Hostel", type: "select", opts: () => S.d.hostels.map((h) => [h.id, h.name]), blank: "— Choose —", show: (v) => v.role === "Warden", half: 1 },
+      { k: "role", l: "Role", type: "seg", opts: () => ROLES.map((r) => [r, r]), val: "Unit" },
+      { k: "foundationId", l: "Foundation", type: "select", req: 1, opts: () => S.d.foundations.map((f) => [f.id, f.name]), blank: "— Choose foundation —", show: (v) => v.role === "Foundation", half: 1 },
+      { k: "hostelId", l: "Unit", type: "select", req: 1, opts: () => locOpts(S.d.hostels.filter((h) => h.kind === "unit").map((h) => h.id)), blank: "— Choose unit —", show: (v) => v.role === "Unit", half: 1 },
       { k: "phone", l: "Phone", half: 1 },
       { k: "password", l: "Password", type: "password", ph: "At least 8 characters", help: "Leave blank to keep the current password." },
       { k: "active", l: "Active (can sign in)", type: "check", val: true },
     ],
   },
 };
+const ROLES = ["Unit", "Foundation", "Organization", "Admin"];
+const userScope = (r) => (r.role === "Admin" ? "Everything" : r.role === "Organization" ? "All foundations" : r.role === "Foundation" ? fName(r.foundationId) : hName(r.hostelId));
 const initials = (n) => String(n || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
 function masterView(key) {
   const m = MASTERS[key];
   const f = fv(key);
-  const rows = m.rows().filter((r) => match(f.q, ...m.search(r))).filter((r) => !f.st || (f.st === "a" ? r.active !== false : r.active === false)).filter((r) => !f.role || r.role === f.role).slice().sort((a, b) => cmp(a.name, b.name));
+  const rows = m.rows().filter((r) => match(f.q, ...m.search(r))).filter((r) => !f.st || (f.st === "a" ? r.active !== false : r.active === false)).filter((r) => !f.role || r.role === f.role).filter((r) => !f.fd || r.foundationId === +f.fd).filter((r) => !f.ut || r.unitType === f.ut).slice().sort((a, b) => cmp(a.name, b.name));
   const cols = m.cols.concat([{ h: "", t: () => "", nocsv: 1, nosort: 1, html: (r) => `<div class="rowacts">${ab("mEdit", r.id, "edit", "Edit", "blue", `data-m="${key}"`)}${ab("mDel", r.id, "trash", "Delete", "red", `data-m="${key}"`)}</div>` }]);
   const all = m.rows();
   const st = [{ v: nf(all.length), l: m.title }];
-  if (key === "hostels" || key === "items") st.push({ v: nf(all.filter((r) => r.active).length), l: "Active", tone: "green" }, { v: nf(all.filter((r) => !r.active).length), l: "Inactive", tone: "slate" });
-  if (key === "users") st.push({ v: nf(all.filter((r) => r.role === "Admin").length), l: "Admins", tone: "violet" }, { v: nf(all.filter((r) => r.role === "Warden").length), l: "Wardens", tone: "cyan" }, { v: nf(all.filter((r) => !r.hasLogin || !r.active).length), l: "Cannot sign in", tone: "amber" });
+  if (key === "hostels" || key === "items" || key === "foundations") st.push({ v: nf(all.filter((r) => r.active).length), l: "Active", tone: "green" }, { v: nf(all.filter((r) => !r.active).length), l: "Inactive", tone: "slate" });
+  if (key === "users") st.push({ v: nf(all.filter((r) => r.role === "Admin").length), l: "Admins", tone: "violet" }, { v: nf(all.filter((r) => r.role === "Unit").length), l: "Unit users", tone: "cyan" }, { v: nf(all.filter((r) => !r.hasLogin || !r.active).length), l: "Cannot sign in", tone: "amber" });
   const fdefs = [{ k: "q", type: "search", ph: `Search ${m.title.toLowerCase()}` }];
-  if (key === "hostels" || key === "items" || key === "users") fdefs.push({ k: "st", l: "Status", opts: [["a", "Active"], ["i", "Inactive"]], all: "Any status" });
-  if (key === "users") fdefs.push({ k: "role", l: "Role", opts: [["Admin", "Admin"], ["Warden", "Warden"]], all: "All roles" });
+  if (key === "hostels" || key === "items" || key === "users" || key === "foundations") fdefs.push({ k: "st", l: "Status", opts: [["a", "Active"], ["i", "Inactive"]], all: "Any status" });
+  if (key === "users") fdefs.push({ k: "role", l: "Role", opts: ROLES.map((r) => [r, r]), all: "All roles" });
+  if (key === "hostels") fdefs.push({ k: "fd", l: "Foundation", opts: S.d.foundations.map((f) => [f.id, f.name]), all: "All foundations" }, { k: "ut", l: "Type", opts: [["Hostel", "Hostel"], ["College", "College"]], all: "All types" });
   return head(m.title, m.sub, `${csvBtn(key)}<button class="btn pri" data-act="mEdit" data-m="${key}">${ic("plus")}<span class="l">Add ${m.one}</span></button>`)
     + stats(st) + filterBar(key, fdefs) + table(key, cols, rows, { nocards: 1, csv: key, emptyIcon: m.icon, empty: `No ${m.title.toLowerCase()} yet.` });
 }
-["hostels", "items", "categories", "units", "places", "users"].forEach((k) => (V[k] = () => masterView(k)));
+["foundations", "hostels", "items", "categories", "units", "places", "users"].forEach((k) => (V[k] = () => masterView(k)));
 
 /* ---------- settings ---------- */
 V.settings = () => {
   const s = S.d.settings || {};
   const off = new Set(s.tgOff || []);
   const ev = Object.entries(s.tgEvents || {});
-  const hostelGroups = S.d.hostels.filter((h) => h.tgChat).length;
+  const hostelGroups = S.d.hostels.filter((h) => h.tgChat).length + S.d.foundations.filter((f) => f.tgChat).length;
   return head("Settings")
-    + `<div class="card" style="max-width:760px"><div class="ch"><h3>Telegram notifications</h3><span class="sub">${hostelGroups ? `Main group + ${hostelGroups} hostel group${hostelGroups > 1 ? "s" : ""}` : "Main group"}</span></div>
+    + `<div class="card" style="max-width:760px"><div class="ch"><h3>Telegram notifications</h3><span class="sub">${hostelGroups ? `Main group + ${hostelGroups} more group${hostelGroups > 1 ? "s" : ""}` : "Main group"}</span></div>
     <form id="setForm" class="db" style="padding:18px 20px">
+      <div class="fld"><label>Organization name</label><input name="orgName" value="${esc(s.orgName || "")}" placeholder="e.g. Ajmal Group"><div class="help">Shown at the top of the menu. Foundations sit under it.</div></div>
       <div class="fld"><label class="chk"><input type="checkbox" name="telegramOn" ${s.telegramOn ? "checked" : ""}> Send Telegram notifications</label></div>
       <div class="fld half"><label>Bot token</label><input name="telegramToken" type="password" autocomplete="new-password" placeholder="${s.telegramTokenSet ? "Saved — leave blank to keep" : "123456:ABC…"}"></div>
-      <div class="fld half"><label>Main group chat ID</label><input name="telegramChat" value="${esc(s.telegramChat)}" placeholder="-1001234567890"><div class="help">Gets every message from all hostels.</div></div>
+      <div class="fld half"><label>Main group chat ID</label><input name="telegramChat" value="${esc(s.telegramChat)}" placeholder="-1001234567890"><div class="help">Gets every message from all foundations and units.</div></div>
       <div class="fld"><label>App address (added as a link in messages)</label><input name="appUrl" value="${esc(s.appUrl || location.origin + location.pathname.replace(/index\.html$/, ""))}"></div>
       <div class="fld" style="border-top:1px solid var(--line2);padding-top:14px;margin-top:4px"><label>Messages to send</label>
         <div class="evgrid">${ev.map(([k, l]) => `<label class="chk"><input type="checkbox" name="ev_${k}" ${off.has(k) ? "" : "checked"}> ${esc(l)}</label>`).join("")}</div></div>
@@ -964,7 +1013,7 @@ function openForm(o) {
       else if (fd.type === "textarea") ctl = `<textarea id="f_${fd.k}" name="${fd.k}" placeholder="${esc((typeof fd.ph === "function" ? fd.ph(vals) : fd.ph) || "")}">${esc(v)}</textarea>`;
       else if (fd.type === "check") return `<div class="fld"><label class="chk"><input type="checkbox" name="${fd.k}" ${v ? "checked" : ""}> ${esc(fd.l)}</label>${helpH}</div>`;
       else if (fd.type === "seg") ctl = `<input type="hidden" name="${fd.k}" value="${esc(v)}"><div class="seg">${fd.opts(vals).map(([ov, ol, icn]) => `<button type="button" data-seg="${fd.k}" data-v="${esc(ov)}" class="${String(ov) === String(v) ? "on" : ""}">${icn ? ic(icn) : ""}${esc(ol)}</button>`).join("")}</div>`;
-      else ctl = `<input id="f_${fd.k}" name="${fd.k}" type="${fd.type || "text"}" value="${esc(v)}" placeholder="${esc((typeof fd.ph === "function" ? fd.ph(vals) : fd.ph) || "")}" ${fd.type === "number" ? 'min="0" step="1" inputmode="numeric"' : ""} ${fd.ro ? "readonly tabindex=\"-1\" style=\"background:var(--line2);font-weight:700\"" : ""} ${fd.list ? `list="l_${fd.k}"` : ""} autocomplete="${fd.type === "password" ? "new-password" : "off"}">${fd.list ? `<datalist id="l_${fd.k}">${fd.list.map((x) => `<option value="${esc(x)}">`).join("")}</datalist>` : ""}`;
+      else ctl = `<input id="f_${fd.k}" name="${fd.k}" type="${fd.type || "text"}" value="${esc(v)}" placeholder="${esc((typeof fd.ph === "function" ? fd.ph(vals) : fd.ph) || "")}" ${fd.type === "number" ? 'min="0" step="1" inputmode="numeric"' : ""} ${(typeof fd.ro === "function" ? fd.ro(vals) : fd.ro) ? "readonly tabindex=\"-1\" style=\"background:var(--line2);font-weight:700\"" : ""} ${fd.list ? `list="l_${fd.k}"` : ""} autocomplete="${fd.type === "password" ? "new-password" : "off"}">${fd.list ? `<datalist id="l_${fd.k}">${fd.list.map((x) => `<option value="${esc(x)}">`).join("")}</datalist>` : ""}`;
       return `<div class="fld${fd.half ? " half" : ""}${bad[fd.k] ? " bad" : ""}" data-fk="${fd.k}">${lab}${ctl}${bad[fd.k] ? `<div class="ferr">${esc(bad[fd.k])}</div>` : ""}${helpH}</div>`;
     }).join("") + `<div class="err" role="alert"></div>`;
     refresh();
@@ -1110,54 +1159,135 @@ function stockForm() {
   const hs = hostelOpts().filter(([id]) => (M.H.get(id) || {}).active);
   const items = S.d.items.filter((i) => i.active);
   if (!items.length) return toast(M.admin ? "Add items under Masters → Items first." : "Ask an Admin to add items first.", true);
-  if (!hs.length) return toast("Add a hostel first.", true);
+  if (!hs.length) return toast("Add a unit first (Masters → Units).", true);
   const hasOpening = (h, i) => S.d.txns.some((t) => t.kind === "opening" && t.hostelId === +h && t.itemId === +i);
   openForm({
     title: "Add stock",
     fields: [
-      { k: "kind", l: "Type", type: "seg", opts: () => [["in", "Received", "in"], ["opening", "Opening stock", "box"]], val: "in" },
-      { k: "hostelId", l: "Hostel", type: "select", opts: () => hs, val: String(M.admin ? hs[0][0] : M.myH), show: () => M.admin, req: 1 },
+      { k: "kind", l: "Type", type: "seg", opts: () => [["in", "Purchase", "in"], ["opening", "Opening stock", "box"]], val: "in" },
+      { k: "hostelId", l: "Unit / warehouse", type: "select", opts: () => hs, val: String((hs.find(([id]) => isWh(id)) || hs[0])[0]), show: () => hs.length > 1, req: 1 },
       { k: "itemId", l: "Item", type: "select", blank: "— Choose item —", opts: () => groupedItems(items), req: 1,
-        help: (v) => (v.itemId ? (v.kind === "opening" && hasOpening(v.hostelId, v.itemId) ? { t: "Opening stock is already entered for this item at this hostel. Use Received instead.", c: "warn" } : { t: `In stock now: <b>${nf((M.inv.get(v.hostelId + "|" + v.itemId) || {}).current || 0)}</b> ${esc(iUnit(+v.itemId))}` }) : "") },
+        help: (v) => (v.itemId ? (v.kind === "opening" && hasOpening(v.hostelId, v.itemId) ? { t: "Opening stock is already entered for this item here. Use Purchase instead.", c: "warn" } : { t: `In stock now: <b>${nf((M.inv.get(v.hostelId + "|" + v.itemId) || {}).current || 0)}</b> ${esc(iUnit(+v.itemId))}${itemHasWarranty(+v.itemId) ? " · this item has a warranty" : ""}` }) : "") },
       { k: "qty", l: "Quantity", type: "number", req: 1, half: 1 },
-      { k: "at", l: (v) => (v.kind === "opening" ? "As of date" : "Date received"), type: "date", req: 1, val: today(), half: 1 },
-      { k: "notes", l: "Notes", type: "textarea", req: (v) => v.kind === "in", ph: (v) => (v.kind === "in" ? "Where it came from, bill number…" : "Remarks") },
+      { k: "at", l: (v) => (v.kind === "opening" ? "As of date" : "Purchase date"), type: "date", req: 1, val: today(), half: 1 },
+      { k: "party", l: "Supplier", half: 1, ph: "e.g. Sharma Furniture", show: (v) => v.kind === "in" || itemHasWarranty(+v.itemId) },
+      { k: "warrantyNo", l: "Warranty / serial no.", half: 1, show: (v) => itemHasWarranty(+v.itemId) },
+      { k: "warrantyStart", l: "Warranty from", type: "date", half: 1, show: (v) => itemHasWarranty(+v.itemId) },
+      { k: "warrantyExpiry", l: "Warranty expiry", type: "date", req: 1, half: 1, show: (v) => itemHasWarranty(+v.itemId) },
+      { k: "notes", l: "Notes", type: "textarea", req: (v) => v.kind === "in", ph: (v) => (v.kind === "in" ? "Bill number, where it came from…" : "Remarks") },
     ],
     submit: "Add stock",
-    onSubmit: async (v) => { await api("stock.add", { ...v, hostelId: +v.hostelId }); return `Added ${nf(v.qty)} ${iUnit(+v.itemId)} of ${iName(+v.itemId)}`; },
+    onSubmit: async (v) => { await api("stock.add", { ...v, hostelId: +v.hostelId, warrantyStart: v.warrantyStart || v.at }); return `Added ${nf(v.qty)} ${iUnit(+v.itemId)} of ${iName(+v.itemId)}${itemHasWarranty(+v.itemId) ? " with its warranty" : ""}`; },
   });
 }
 function groupedItems(items) {
   return items.slice().sort((a, b) => cmp(iCat(a.id), iCat(b.id)) || cmp(a.name, b.name)).map((i) => [i.id, `${i.name} · ${iCat(i.id)}`]);
 }
 
+/* ---------- opening stock bulk upload ---------- */
+const BULK_COLS = [["location", "Unit / warehouse"], ["item", "Item"], ["qty", "Qty"], ["date", "Date (dd/mm/yyyy)"], ["supplier", "Supplier"],
+  ["warrantyNo", "Warranty / serial no."], ["warrantyStart", "Warranty from (dd/mm/yyyy)"], ["warrantyExpiry", "Warranty expiry (dd/mm/yyyy)"], ["notes", "Notes"]];
+const csvCell = (v) => { const t = String(v ?? ""); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+function parseCSV(text) {
+  const rows = []; let row = [], cell = "", q = false;
+  text = text.replace(/^\uFEFF/, "");
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; } else if (ch === '"') q = false; else cell += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === "," || ch === ";" || ch === "\t") { row.push(cell); cell = ""; }
+    else if (ch === "\n" || ch === "\r") { if (ch === "\r" && text[i + 1] === "\n") i++; row.push(cell); rows.push(row); row = []; cell = ""; }
+    else cell += ch;
+  }
+  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter((r) => r.some((c) => c.trim() !== ""));
+}
+// dd/mm/yyyy (or dd-mm-yyyy, or yyyy-mm-dd) → yyyy-mm-dd; anything else is passed on for the server to reject.
+const toIso = (t) => { t = String(t || "").trim(); let m = t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/); if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`; m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? t : t; };
+function bulkForm() {
+  closeDlg();
+  const locs = hostelOpts().filter(([id]) => (M.H.get(id) || {}).active).map(([, l]) => l);
+  const items = S.d.items.filter((i) => i.active);
+  let rows = null;
+  const w = document.createElement("div");
+  w.className = "dlg";
+  w.innerHTML = `<form novalidate><div class="dh"><div><h2>Opening stock bulk upload</h2><p>Load opening stock for many items at once from a spreadsheet.</p></div><button type="button" class="iconbtn" data-close aria-label="Close">${ic("x")}</button></div>
+    <div class="db">
+      <div class="fld"><label>1. Download the template</label><div><button type="button" class="btn" id="bkTpl">${ic("download")}Download template</button></div>
+        <div class="help">Open it in Excel or Google Sheets. One row per unit and item. Unit and item names must match the app exactly. Warranty items need the warranty expiry date. Save it as CSV.</div></div>
+      <div class="fld"><label for="bkFile">2. Upload the filled file (.csv)</label><input type="file" id="bkFile" accept=".csv,text/csv"></div>
+      <div id="bkOut" class="fld"></div>
+    </div>
+    <div class="df"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn pri" id="bkGo" disabled>Import</button></div></form>`;
+  document.body.appendChild(w);
+  const out = $("#bkOut", w), go = $("#bkGo", w);
+  $("#bkTpl", w).onclick = () => {
+    const ex = items.slice(0, 2).map((it, n) => [locs[0] || "", it.name, n ? 5 : 20, fmtD(today()), n ? "" : "Sharma Furniture", "", "", itemHasWarranty(it.id) ? fmtD(addDays(today(), 365)) : "", "Example row — replace"]);
+    const lines = [BULK_COLS.map(([, h]) => h)].concat(ex).map((r) => r.map(csvCell).join(","));
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" }));
+    a.download = "opening-stock-template.csv";
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+  w.addEventListener("click", (e) => { if (e.target.closest("[data-close]")) closeDlg(); });
+  $("#bkFile", w).onchange = async (e) => {
+    const file = e.target.files[0];
+    go.disabled = true; rows = null;
+    if (!file) { out.innerHTML = ""; return; }
+    const grid = parseCSV(await file.text());
+    if (grid.length < 2) { out.innerHTML = `<div class="err">${ic("alert")}<span>The file has no rows under the header.</span></div>`; return; }
+    rows = grid.slice(1).map((r) => Object.fromEntries(BULK_COLS.map(([k], n) => [k, /date|warrantyStart|warrantyExpiry/.test(k) ? toIso(r[n]) : String(r[n] ?? "").trim()])));
+    out.innerHTML = `<div class="help">Checking ${nf(rows.length)} rows…</div>`;
+    try {
+      const r = await api("stock.bulk", { rows, check: 1 });
+      if (r.errors.length) {
+        out.innerHTML = `<div class="err">${ic("alert")}<span>${nf(r.errors.length)} row${r.errors.length > 1 ? "s need" : " needs"} fixing. Correct the file and upload it again. Nothing has been saved.</span></div>
+          <div class="bkerr">${r.errors.slice(0, 50).map((x) => `<div><b>Row ${x.row}</b> ${esc(x.error)}</div>`).join("")}${r.errors.length > 50 ? `<div>…and ${nf(r.errors.length - 50)} more</div>` : ""}</div>`;
+      } else {
+        out.innerHTML = `<div class="help good">All ${nf(rows.length)} rows are ready to import.</div>`;
+        go.disabled = false;
+      }
+    } catch (err) { out.innerHTML = `<div class="err">${ic("alert")}<span>${esc(err.message)}</span></div>`; }
+  };
+  $("form", w).onsubmit = async (e) => {
+    e.preventDefault();
+    if (!rows) return;
+    go.disabled = true; go.textContent = "Importing…";
+    try {
+      const r = await api("stock.bulk", { rows });
+      closeDlg(); toast(`Imported ${nf(r.added)} opening stock rows`); await reload();
+    } catch (err) { out.innerHTML = `<div class="err">${ic("alert")}<span>${esc(err.message)}</span></div>`; go.disabled = false; go.textContent = "Import"; }
+  };
+}
+
 /* ---------- issue form ---------- */
 function issueForm(kind = "transfer") {
   const hs = hostelOpts().filter(([id]) => (M.H.get(id) || {}).active);
-  if (!hs.length) return toast("Add a hostel first.", true);
-  const startH = M.admin ? hs[0][0] : M.myH;
+  if (!hs.length) return toast("Add a unit first (Masters → Units).", true);
+  const startH = hs[0][0];
   const itemsFor = (h) => S.d.items.filter((i) => available(+h, i.id) > 0);
   openForm({
     title: "Issue asset",
     fields: [
       { k: "kind", l: "What is happening?", type: "seg", opts: () => [["transfer", "Transfer", "move"], ["repair", "Repair", "wrench"], ["damage", "Damaged", "alert"]], val: kind },
-      { k: "hostelId", l: "From hostel", type: "select", req: 1, opts: () => hs, val: String(startH), show: () => M.admin },
+      { k: "hostelId", l: "From", type: "select", req: 1, opts: () => hs, val: String(startH), show: () => hs.length > 1 },
       { k: "itemId", l: "Item", type: "select", blank: "— Choose item —", req: 1, opts: (v) => groupedItems(itemsFor(v.hostelId)),
-        help: (v) => (itemsFor(v.hostelId).length ? (v.itemId ? { t: `Available to issue: <b>${nf(available(+v.hostelId, +v.itemId))}</b> ${esc(iUnit(+v.itemId))}`, c: "good" } : "") : { t: "This hostel has no stock to issue yet.", c: "warn" }) },
-      { k: "qty", l: "Quantity", type: "number", req: 1, half: 1,
-        help: (v) => (v.qty && v.itemId && +v.qty > available(+v.hostelId, +v.itemId) ? { t: "More than available", c: "warn" } : "") },
+        help: (v) => (itemsFor(v.hostelId).length ? (v.itemId ? { t: `Available to issue: <b>${nf(available(+v.hostelId, +v.itemId))}</b> ${esc(iUnit(+v.itemId))}`, c: "good" } : "") : { t: "Nothing in stock here to issue yet.", c: "warn" }) },
+      { k: "qty", l: "Quantity", type: "number", req: 1, half: 1, ro: (v) => itemHasWarranty(+v.itemId),
+        help: (v) => (itemHasWarranty(+v.itemId) ? { t: "Warranty item: issued one piece at a time." } : v.qty && v.itemId && +v.qty > available(+v.hostelId, +v.itemId) ? { t: "More than available", c: "warn" } : "") },
       { k: "at", l: "Date", type: "date", req: 1, val: today(), half: 1 },
-      { k: "toHostelId", l: "To hostel", type: "select", blank: "— Choose hostel —", req: 1, show: (v) => v.kind === "transfer",
-        opts: (v) => S.d.hostels.filter((h) => h.active && h.id !== +v.hostelId).map((h) => [h.id, h.name]) },
-      { k: "place", l: "Sent to (repairer)", req: 1, ph: "e.g. Sharma Electricals", show: (v) => v.kind === "repair", half: 1 },
+      { k: "toHostelId", l: "To (unit or warehouse)", type: "select", blank: "— Choose —", req: 1, show: (v) => v.kind === "transfer",
+        opts: (v) => locOpts(S.d.hostels.filter((h) => h.active && h.id !== +v.hostelId).map((h) => h.id)) },
+      { k: "repairType", l: "Repair type", type: "seg", show: (v) => v.kind === "repair", opts: () => [["External", "External", "send"], ["Internal", "Internal", "home"]], val: "External" },
+      { k: "place", l: (v) => (v.repairType === "Internal" ? "Repaired by (staff)" : "Sent to (repairer)"), req: 1, ph: (v) => (v.repairType === "Internal" ? "e.g. Ramesh, maintenance" : "e.g. Sharma Electricals"), show: (v) => v.kind === "repair", half: 1 },
       { k: "expectedAt", l: "Expected back", type: "date", req: 1, show: (v) => v.kind === "repair", half: 1 },
       { k: "dplace", l: "Sent to after damage", type: "select", blank: "— Choose —", req: 1, show: (v) => v.kind === "damage", opts: () => S.d.damagePlaces.map((p) => [p.name, p.name]) },
       { k: "notes", l: "Notes", type: "textarea", ph: "Reason, condition, bill…" },
     ],
-    onChange: (v, k) => { if (k === "hostelId") { v.itemId = ""; v.toHostelId = ""; } },
+    onChange: (v, k) => { if (k === "hostelId") { v.itemId = ""; v.toHostelId = ""; } if (k === "itemId" && itemHasWarranty(+v.itemId)) v.qty = "1"; },
     submit: "Issue",
     onSubmit: async (v) => {
-      const r = await api("issue.create", { kind: v.kind, hostelId: +v.hostelId, itemId: +v.itemId, qty: +v.qty, at: v.at, toHostelId: v.toHostelId ? +v.toHostelId : null, place: v.kind === "damage" ? v.dplace : v.place, expectedAt: v.expectedAt, notes: v.notes });
+      const r = await api("issue.create", { kind: v.kind, hostelId: +v.hostelId, itemId: +v.itemId, qty: +v.qty, at: v.at, toHostelId: v.toHostelId ? +v.toHostelId : null, place: v.kind === "damage" ? v.dplace : v.place, repairType: v.repairType, expectedAt: v.expectedAt, notes: v.notes });
       return v.kind === "transfer" ? `${r.issue.no} sent to ${hName(+v.toHostelId)} for approval` : v.kind === "repair" ? `${r.issue.no}: sent for repair` : `${r.issue.no}: sent for approval (Approvals → Damage)`;
     },
   });
@@ -1173,7 +1303,7 @@ function receiveForm(id) {
     fields: [
       { k: "sent", l: "Send qty", type: "text", half: 1, val: String(i.qty), ro: 1 },
       { k: "receivedQty", l: "Received qty", type: "number", half: 1, req: 1, val: String(i.qty),
-        help: (v) => { const r = +v.receivedQty; if (v.receivedQty === "" || isNaN(r)) return ""; if (r > i.qty) return { t: `Can't be more than ${nf(i.qty)}`, c: "warn" }; if (r === i.qty) return { t: "All received", c: "good" }; if (r === 0) return { t: "Nothing received: all stay with the sending hostel", c: "warn" }; return { t: `${nf(i.qty - r)} short: they stay with the sending hostel`, c: "warn" }; } },
+        help: (v) => { const r = +v.receivedQty; if (v.receivedQty === "" || isNaN(r)) return ""; if (r > i.qty) return { t: `Can't be more than ${nf(i.qty)}`, c: "warn" }; if (r === i.qty) return { t: "All received", c: "good" }; if (r === 0) return { t: "Nothing received: all stay with the sender", c: "warn" }; return { t: `${nf(i.qty - r)} short: they stay with the sender`, c: "warn" }; } },
       { k: "note", l: (v) => (+v.receivedQty < i.qty ? "Reason for the difference" : "Note"), type: "textarea", req: 0, ph: "e.g. 2 broken in transit" },
     ],
     submit: "Update",
@@ -1196,7 +1326,7 @@ function returnForm(id) {
     fields: [
       { k: "out", l: "Still at repair", type: "text", val: `${nf(out)} ${iUnit(i.itemId)}`, ro: 1 },
       { k: "okQty", l: "Repaired and returned", type: "number", half: 1, val: String(out), help: "Goes back into stock." },
-      { k: "scrapQty", l: "Not repairable", type: "number", half: 1, val: "0", help: M.admin ? "Counted as damaged." : "Sent to an Admin for damage approval." },
+      { k: "scrapQty", l: "Not repairable", type: "number", half: 1, val: "0", help: "Sent to Approvals → Damage." },
       { k: "place", l: "Not repairable items sent to", type: "select", blank: "— Not sent anywhere —", opts: () => S.d.damagePlaces.map((p) => [p.name, p.name]), show: (v) => +v.scrapQty > 0 },
       { k: "at", l: "Date returned", type: "date", req: 1, val: today() },
       { k: "notes", l: "Notes", type: "textarea", ph: "Repair bill, remarks…" },
@@ -1215,7 +1345,7 @@ function warrantyForm(id) {
     fields: [
       { k: "itemId", l: "Item", type: "select", blank: "— Choose item —", req: 1, opts: () => groupedItems(S.d.items), half: 1 },
       { k: "categoryId", l: "Category", type: "select", blank: "— Choose —", opts: () => catOpts(), half: 1, add: ADD_CATEGORY },
-      { k: "hostelId", l: "Hostel", type: "select", blank: "All hostels", opts: () => S.d.hostels.map((h) => [h.id, h.name]), show: () => M.admin, half: 1, val: "" },
+      { k: "hostelId", l: "Unit / warehouse", type: "select", blank: M.all ? "All units" : "— Choose —", req: !M.all, opts: () => hostelOpts(), show: () => M.multi, half: 1, val: M.multi ? "" : String(M.scopeH[0]) },
       { k: "qty", l: "Quantity covered", type: "number", half: 1 },
       { k: "warrantyNo", l: "Warranty / AMC number", half: 1 },
       { k: "supplier", l: "Supplier / service provider", half: 1 },
@@ -1254,6 +1384,7 @@ const ACT = {
   },
   issue: (el) => issueForm(el.dataset.kind || "transfer"),
   stockin: () => stockForm(),
+  bulkup: () => bulkForm(),
   csv: (el) => downloadCSV(el.dataset.key),
   ftoggle: (el) => { S.fopen[el.dataset.key] = !S.fopen[el.dataset.key]; render(); },
   fchip: (el) => { fv(el.dataset.key)[el.dataset.k] = ""; S.page[el.dataset.key] = 0; render(); },
@@ -1263,7 +1394,7 @@ const ACT = {
   page: (el) => { S.page[el.dataset.key] = +el.dataset.p; render(); window.scrollTo({ top: 0, behavior: "smooth" }); },
   ftab: (el) => { fv(el.dataset.key)[el.dataset.k] = el.dataset.v; S.page[el.dataset.key] = 0; render(); },
   clearf: (el) => { S.f[el.dataset.key] = {}; S.page[el.dataset.key] = 0; render(); },
-  ledger: (el) => historyPopup(+el.dataset.i, el.dataset.h ? +el.dataset.h : M.admin ? 0 : M.myH),
+  ledger: (el) => historyPopup(+el.dataset.i, el.dataset.h ? +el.dataset.h : M.multi ? 0 : M.scopeH[0]),
   closehist: () => { S.hist = null; closeDlg(); },
   fullledger: () => { const h = S.hist; S.hist = null; closeDlg(); S.ledger = { h: h.hid ? String(h.hid) : "", i: String(h.item) }; S.f.ledger = {}; go("ledger"); },
   invHostel: (el) => { S.f.inventory = { h: el.dataset.id }; go("inventory"); },
@@ -1304,14 +1435,14 @@ const ACT = {
     catch (e) { out.innerHTML = `<div class="help warn">${esc(e.message)}</div>`; }
   },
   clearToken: async () => { if (await confirmBox("Remove the bot token?", "Telegram messages will stop until you add a token again.", "Remove", true)) await run(() => api("settings.save", { ...settingsVals(), clearToken: 1 }), "Bot token removed"); },
-  seed: async () => { if (await confirmBox("Load sample data?", "Adds 4 sample hostels with items, stock, transfers, repairs and warranties. Sample wardens can't sign in until you set a password.", "Load")) await run(() => api("seed"), "Sample data loaded"); },
+  seed: async () => { if (await confirmBox("Load sample data?", "Adds 4 sample units with items, stock, transfers, repairs and warranties. Sample unit users can't sign in until you set a password.", "Load")) await run(() => api("seed"), "Sample data loaded"); },
   logout: async () => { try { await api("logout", {}); } catch (_) {} location.reload(); },
   menu: () => document.body.classList.toggle("drawer"),
 };
 async function run(fn, msg) {
   try { await fn(); if (msg) toast(msg); await reload(); } catch (e) { toast(e.message || "Something went wrong.", true); }
 }
-const settingsVals = () => { const f = $("#setForm"); return { tgOff: Object.keys(S.d.settings.tgEvents || {}).filter((k) => !f["ev_" + k].checked), dailyTime: f.dailyTime.value, telegramOn: f.telegramOn.checked, telegramChat: f.telegramChat.value, telegramToken: f.telegramToken.value, appUrl: f.appUrl.value }; };
+const settingsVals = () => { const f = $("#setForm"); return { tgOff: Object.keys(S.d.settings.tgEvents || {}).filter((k) => !f["ev_" + k].checked), dailyTime: f.dailyTime.value, telegramOn: f.telegramOn.checked, telegramChat: f.telegramChat.value, telegramToken: f.telegramToken.value, appUrl: f.appUrl.value, orgName: f.orgName.value }; };
 async function saveSettings(quiet) { await api("settings.save", settingsVals()); if (!quiet) { toast("Settings saved"); await reload(); } }
 
 /* =================================================================== shell */
@@ -1323,7 +1454,7 @@ const NAV = [
   { v: "damage", l: "Damage", i: "alert", n: () => M.dmgPending.length, hot: 1 },
   { v: "repairs", l: "Repair", i: "wrench", n: () => M.openRepairs.length },
   { g: "Records" }, { v: "warranties", l: "Warranties", i: "shield", n: () => M.exp30, hot: 1 },
-  { g: "Masters", admin: 1 }, { v: "hostels", l: "Hostels", i: "building", admin: 1 }, { v: "items", l: "Items", i: "tag", admin: 1 }, { v: "categories", l: "Categories", i: "folder", admin: 1 }, { v: "units", l: "Units", i: "box", admin: 1 },
+  { g: "Masters", admin: 1 }, { v: "foundations", l: "Foundations", i: "building", admin: 1 }, { v: "hostels", l: "Units", i: "home", admin: 1 }, { v: "items", l: "Items", i: "tag", admin: 1 }, { v: "categories", l: "Categories", i: "folder", admin: 1 }, { v: "units", l: "Measuring units", i: "box", admin: 1 },
   { v: "places", l: "Damage destinations", i: "trash", admin: 1 }, { v: "users", l: "Users", i: "users", admin: 1 }, { v: "settings", l: "Settings", i: "settings", admin: 1 },
 ];
 function renderShell() {
@@ -1341,14 +1472,16 @@ function renderShell() {
     html += `<a href="#${n.v}" class="${S.view === n.v ? "on" : ""}">${ic(n.i)}${esc(n.l)}${c ? `<span class="n${n.hot ? " hot" : ""}">${nf(c)}</span>` : ""}</a>`;
   }
   $("#nav").innerHTML = html + (open ? "</div>" : "");
-  $("#meBox").innerHTML = `<span class="av">${esc(initials(S.me.name))}</span><div class="t"><b>${esc(S.me.name)}</b><span>${esc(S.me.role)}${M.admin ? "" : " · " + esc(hName(M.myH))}</span></div><button class="iconbtn" title="Log out" data-act="logout">${ic("logout")}</button>`;
-  $("#orgLine").textContent = M.admin ? "" : hName(M.myH);
-  $("#orgLine").hidden = M.admin;
+  $("#meBox").innerHTML = `<span class="av">${esc(initials(S.me.name))}</span><div class="t"><b>${esc(S.me.name)}</b><span>${esc(S.me.role)}${M.all ? "" : " · " + esc(userScope(S.me))}</span></div><button class="iconbtn" title="Log out" data-act="logout">${ic("logout")}</button>`;
+  // Under the app name: the Organization name for Admin / Organization, otherwise what this login looks after.
+  const sub = M.all ? S.d.org || "" : userScope(S.me);
+  $("#orgLine").textContent = sub;
+  $("#orgLine").hidden = !sub;
   const inc = M.incoming.length;
   const b = (v, l, i) => `<a href="#${v}" class="${S.view === v ? "on" : ""}"><span class="ico">${ic(i)}</span>${l}${v === "transfer" && inc ? `<span class="dot">${inc}</span>` : ""}</a>`;
   $("#bnav").innerHTML = b("home", "Home", "home") + b("inventory", "Inventory", "box") + `<a class="mid" data-act="issue"><span class="c">${ic("plus")}</span>Issue</a>` + b("transfer", "Approvals", "check") + `<a data-act="menu"><span class="ico">${ic("menu")}</span>More</a>`;
   const nav = NAV.find((n) => n.v === S.view);
-  $("#topTitle").textContent = M.admin ? "Hostel Assets" : hName(M.myH);
+  $("#topTitle").textContent = M.all ? S.d.org || "Hostel Assets" : userScope(S.me);
 }
 function render() {
   if (!S.d) return;
@@ -1476,7 +1609,7 @@ function openSS(sel, btn, initial = "") {
   pop.innerHTML = `<div class="ss-s">${ic("search")}<input placeholder="Search…" autocomplete="off" aria-label="Search options"></div><div class="ss-l" role="listbox"></div>`;
   document.body.appendChild(pop);
   const inp = $("input", pop), list = $(".ss-l", pop);
-  // "— Choose … —" placeholders aren't real choices, so they aren't listed (filter options like "All hostels" stay).
+  // "— Choose … —" placeholders aren't real choices, so they aren't listed (filter options like "All units" stay).
   const opts = [...sel.options].map((o, i) => ({ i, t: o.text, ph: o.value === "" && /^—/.test(o.text.trim()) })).filter((o) => !o.ph);
   let shown = [], act = 0;
   const draw = () => {
@@ -1596,7 +1729,7 @@ function showAuth(mode) {
   if (!a) { a = document.createElement("div"); a.id = "auth"; a.className = "auth"; document.body.appendChild(a); }
   const setup = mode === "setup";
   a.innerHTML = `<form novalidate><div class="band">${setup ? "Create the admin account" : "Hostel Asset Management"}</div><div class="body">
-    ${setup ? `<p class="lead">First-time setup. This account manages hostels, items and users.</p><div class="fld"><label>Your name</label><div class="iw"><input name="name" autocomplete="name"></div></div>` : ""}
+    ${setup ? `<p class="lead">First-time setup. This account manages foundations, units, items and users.</p><div class="fld"><label>Your name</label><div class="iw"><input name="name" autocomplete="name"></div></div>` : ""}
     <div class="fld"><label>Email</label><div class="iw">${ic("mail")}<input name="email" type="email" autocomplete="username" placeholder="name@hostel.com"></div></div>
     <div class="fld"><label>Password</label><div class="iw">${ic("lock")}<input name="password" type="password" autocomplete="${setup ? "new-password" : "current-password"}" placeholder="${setup ? "At least 8 characters" : "••••••••"}"><button type="button" class="eye" aria-label="Show password">${ic("eye")}</button></div></div>
     <div class="err"></div><button class="btn pri" type="submit">${setup ? "Create account" : "Sign in"}</button></div></form>`;

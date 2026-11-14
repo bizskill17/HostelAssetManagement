@@ -1,8 +1,8 @@
 <?php
 /**
  * Telegram notifications.
- * Every message goes to the main group in Settings and also to the Telegram group of each hostel
- * involved (set per hostel in Masters → Hostels). Each message type can be switched off in Settings.
+ * Every message goes to the main group in Settings and also to the Telegram group of each unit
+ * involved (Masters → Units) and of its Foundation (Masters → Foundations). Each message type can be switched off in Settings.
  * Daily messages (repairs overdue, warranties expiring, morning summary) are sent once a day after the
  * time set in Settings: by the cron URL if one is set up, otherwise on the first app visit after that time.
  * A failed notification never blocks the stock change; it is written to the PHP error log.
@@ -66,6 +66,10 @@ function tgChats(array $s, array $hostelIds): array
         foreach (q("SELECT tg_chat FROM ha_hostels WHERE id IN ($ph) AND tg_chat <> ''", $ids)->fetchAll(PDO::FETCH_COLUMN) as $c) {
             $chats[] = $c;
         }
+        // …and the groups of the Foundations those units and warehouses belong to.
+        foreach (q("SELECT DISTINCT f.tg_chat FROM ha_foundations f JOIN ha_hostels h ON h.foundation_id = f.id WHERE h.id IN ($ph) AND f.tg_chat <> ''", $ids)->fetchAll(PDO::FETCH_COLUMN) as $c) {
+            $chats[] = $c;
+        }
     }
     return array_values(array_unique($chats));
 }
@@ -126,7 +130,7 @@ function notifyIssue(string $event, array $i, array $by, array $extra = []): voi
                 $L = ["🚫 <b>Transfer $no cancelled</b>", "$from → $to", $what];
                 break;
             case 'damage_reported':
-                $L = ["🟥 <b>Damage $no · waiting for Admin approval</b>", $from, $what . ($i['place'] !== '' ? ' → ' . h($i['place']) : '')];
+                $L = ["🟥 <b>Damage $no · waiting for approval</b>", $from, $what . ($i['place'] !== '' ? ' → ' . h($i['place']) : '')];
                 break;
             case 'damage_approved':
                 $got = (int) $i['received_qty'];
@@ -145,7 +149,7 @@ function notifyIssue(string $event, array $i, array $by, array $extra = []): voi
                 $L = ["❌ <b>Damage $no rejected</b>", $from, "$what — stock unchanged", "Reason: $note"];
                 break;
             case 'repair_sent':
-                $L = ["🔧 <b>Repair $no sent</b>", $from, $what . ($i['place'] !== '' ? ' → ' . h($i['place']) : '')];
+                $L = ["🔧 <b>Repair $no sent" . (($i['repair_type'] ?? '') === 'Internal' ? ' (internal)' : '') . "</b>", $from, $what . ($i['place'] !== '' ? ' → ' . h($i['place']) : '')];
                 if ($i['expected_at']) {
                     $L[] = 'Expected back: ' . dmy($i['expected_at']);
                 }
@@ -222,9 +226,10 @@ function runDaily(bool $force = false): array
         }
     }
     $hostels = [];
-    foreach (db()->query("SELECT id, name, tg_chat FROM ha_hostels")->fetchAll() as $r) {
+    foreach (db()->query("SELECT id, name, tg_chat, foundation_id FROM ha_hostels")->fetchAll() as $r) {
         $hostels[(int) $r['id']] = $r;
     }
+    $founds = db()->query("SELECT id, tg_chat FROM ha_foundations WHERE tg_chat <> ''")->fetchAll();
     $hn = fn($id) => h($hostels[(int) $id]['name'] ?? '');
     $foot = tgFooter($s);
     $main = $s['telegram_chat'] ?? '';
@@ -234,8 +239,9 @@ function runDaily(bool $force = false): array
             $sent++;
         }
     };
-    // Sends the full list to the main group and each hostel's own lines to that hostel's group.
-    $fanOut = function (string $event, string $title, array $lines) use ($s, $hostels, $main, $foot, $post) {
+    // Sends the full list to the main group, each unit's own lines to that unit's group,
+    // and each Foundation's lines (its warehouse and units) to the Foundation's group.
+    $fanOut = function (string $event, string $title, array $lines) use ($s, $hostels, $founds, $main, $foot, $post) {
         if (!$lines || !tgEventOn($s, $event)) {
             return;
         }
@@ -244,6 +250,12 @@ function runDaily(bool $force = false): array
             $mine = array_values(array_filter($lines, fn($l) => $l[0] === $hid));
             if ($mine && $hr['tg_chat'] !== '' && $hr['tg_chat'] !== $main) {
                 $post($hr['tg_chat'], "$title — " . count($mine) . "</b>\n" . numList(array_column($mine, 1)) . $foot);
+            }
+        }
+        foreach ($founds as $f) {
+            $mine = array_values(array_filter($lines, fn($l) => (int) ($hostels[$l[0]]['foundation_id'] ?? 0) === (int) $f['id']));
+            if ($mine && $f['tg_chat'] !== $main) {
+                $post($f['tg_chat'], "$title — " . count($mine) . "</b>\n" . numList(array_column($mine, 1)) . $foot);
             }
         }
     };
@@ -268,7 +280,7 @@ function runDaily(bool $force = false): array
         }
         $label = $w['title'] !== '' ? $w['title'] : (itemRow($w['item_id'] === null ? null : (int) $w['item_id'])['name'] ?? 'Warranty');
         $when = $days === 0 ? 'expires today' : "$days day" . ($days === 1 ? '' : 's') . ' left (' . dmy($w['expiry_at']) . ')';
-        $warr[] = [(int) $w['hostel_id'], h($label) . ' · ' . ($w['hostel_id'] ? $hn($w['hostel_id']) : 'All hostels')
+        $warr[] = [(int) $w['hostel_id'], h($label) . ' · ' . ($w['hostel_id'] ? $hn($w['hostel_id']) : 'All units')
             . ($w['warranty_no'] !== '' ? ' · ' . h($w['warranty_no']) : '') . " — $when"];
     }
     $fanOut('daily_warranty', '🛡️ <b>Warranties expiring', $warr);
@@ -316,7 +328,7 @@ function sendTelegram(array $s, string $html, ?string $chat = null): array
     return ['ok' => true];
 }
 
-/** Posts a test message to the main group and to every hostel group, and reports each result. */
+/** Posts a test message to the main group and to every Foundation and unit group, and reports each result. */
 function sendTest(): array
 {
     $s = settings();
@@ -326,7 +338,10 @@ function sendTest(): array
     $r = [];
     $targets = [];
     if (($s['telegram_chat'] ?? '') !== '') {
-        $targets[] = ['Main group', $s['telegram_chat'], 'all hostels'];
+        $targets[] = ['Main group', $s['telegram_chat'], 'all foundations and units'];
+    }
+    foreach (db()->query("SELECT name, tg_chat FROM ha_foundations WHERE tg_chat <> '' ORDER BY name")->fetchAll() as $fr) {
+        $targets[] = [$fr['name'] . ' group', $fr['tg_chat'], $fr['name'] . ' (warehouse and units)'];
     }
     foreach (db()->query("SELECT name, tg_chat FROM ha_hostels WHERE tg_chat <> '' ORDER BY name")->fetchAll() as $hr) {
         $targets[] = [$hr['name'] . ' group', $hr['tg_chat'], $hr['name']];

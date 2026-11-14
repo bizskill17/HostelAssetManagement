@@ -23,9 +23,10 @@ function seedSample(PDO $db): array
         $cat[$r['name']] = (int) $r['id'];
     }
 
+    $fid = (int) $db->query("SELECT MIN(id) FROM ha_foundations")->fetchColumn() ?: null;
     $H = [];
     foreach ([['Narmada Boys Hostel', 'NBH', 'North campus'], ['Kaveri Boys Hostel', 'KBH', 'North campus'], ['Ganga Girls Hostel', 'GGH', 'South campus'], ['Yamuna Girls Hostel', 'YGH', 'South campus']] as [$n, $c, $a]) {
-        $H[$c] = $ins("INSERT INTO ha_hostels (name, code, address, active, sample) VALUES (?, ?, ?, 1, 1)", [$n, $c, $a]);
+        $H[$c] = $ins("INSERT INTO ha_hostels (foundation_id, kind, unit_type, name, code, address, active, sample) VALUES (?, 'unit', 'Hostel', ?, ?, ?, 1, 1)", [$fid, $n, $c, $a]);
     }
     $I = [];
     foreach ([
@@ -37,7 +38,7 @@ function seedSample(PDO $db): array
         $I[$n] = $ins("INSERT INTO ha_items (name, category_id, unit, active, sample) VALUES (?, ?, ?, 1, 1)", [$n, $cat[$c] ?? null, $u]);
     }
     foreach ([['Suresh Kumar', 'suresh.warden@example.com', 'NBH'], ['Ravi Patel', 'ravi.warden@example.com', 'KBH'], ['Meena Sharma', 'meena.warden@example.com', 'GGH'], ['Kavita Rao', 'kavita.warden@example.com', 'YGH']] as [$n, $e, $h]) {
-        $ins("INSERT IGNORE INTO ha_users (name, email, role, hostel_id, active, sample) VALUES (?, ?, 'Warden', ?, 1, 1)", [$n, $e, $H[$h]]);
+        $ins("INSERT IGNORE INTO ha_users (name, email, role, hostel_id, active, sample) VALUES (?, ?, 'Unit', ?, 1, 1)", [$n, $e, $H[$h]]);
     }
 
     $tx = function (string $h, string $item, string $kind, int $dir, int $qty, string $at, array $more = []) use ($ins, $H, $I, $now): void {
