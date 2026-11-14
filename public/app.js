@@ -164,8 +164,6 @@ const isWh = (id) => (M.H.get(id) || {}).kind === "warehouse";
 const fName = (id) => (M.F.get(id) || {}).name || "—";
 // Item name of an issue, with the Serial No. of a warranty piece: "DG BIG(221)".
 const issueItem = (i) => iName(i.itemId) + (i.serialNo ? `(${i.serialNo})` : "");
-// Under the item name: a warranty piece whose entry has no Serial No. yet (made before pieces were chosen by Serial No.).
-const snHint = (i) => (i.serialNo || !itemHasWarranty(i.itemId) ? "" : M.admin ? `<div class="sn"><span class="lnk" data-act="setsn" data-id="${i.id}">Set Serial No.</span></div>` : `<div class="sn dim">Serial No. not set</div>`);
 // Serial Nos. of a warranty item at a unit / warehouse that are free to issue (not in an open entry, not written off).
 const freeSerials = (hid, iid) => {
   const busy = new Set(S.d.issues.filter((i) => i.itemId === iid && i.serialNo && (i.status === "pending" || (i.kind === "repair" && (i.status === "at_repair" || i.status === "partly_returned")) || (i.kind === "damage" && i.status === "done"))).map((i) => i.serialNo));
@@ -278,7 +276,7 @@ function issueCard(i, extra = []) {
   const recv = i.kind === "transfer" && i.receivedQty != null ? [["Received", recvHtml(i)]] : [];
   return {
     tone: ISSUE_KIND[i.kind].c,
-    title: `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>${snHint(i)}`,
+    title: `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>`,
     qty: `${nf(i.qty)} <small>${esc(iUnit(i.itemId))}</small>`,
     sub: `${esc(hName(i.hostelId))}${to ? " → " + esc(to) : ""}${i.kind === "repair" && i.repairType === "Internal" ? " (internal)" : ""}`,
     meta: `<span class="mono">${esc(i.no)}</span> · ${fmtD(i.at)} · ${esc(uName(i.createdBy))}`,
@@ -558,7 +556,7 @@ function issueCols(withActs = true) {
     { h: "Type", t: (i) => ISSUE_KIND[i.kind].l, html: (i) => badge(ISSUE_KIND[i.kind]) },
     { h: "Repair type", t: (i) => (i.kind === "repair" ? i.repairType || "External" : ""), html: (i) => (i.kind === "repair" ? `<span class="b ${i.repairType === "Internal" ? "cyan" : "violet"}">${esc(i.repairType || "External")}</span>` : `<span class="dim">—</span>`) },
     { h: "From", t: (i) => hName(i.hostelId), cls: "nw" },
-    { h: "Item", t: (i) => issueItem(i), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>${snHint(i)}` },
+    { h: "Item", t: (i) => issueItem(i), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>` },
     { h: "Qty", t: (i) => i.qty, num: 1, html: (i) => `<b>${nf(i.qty)}</b> <span class="dim">${esc(iUnit(i.itemId))}</span>` },
     { h: "Received", t: (i) => (i.kind === "transfer" && i.receivedQty != null ? i.receivedQty : ""), num: 1, html: recvHtml },
     { h: "To / sent to", t: (i) => (i.kind === "transfer" ? hName(i.toHostelId) : i.place || ""), cls: "nw" },
@@ -588,7 +586,6 @@ function issueActs(i) {
     else if (canWriteHostel(i.hostelId)) b.push(ab("cancel", i.id, "x", "Cancel", "slate"));
   }
   if (i.kind === "repair" && outstanding(i) > 0 && (i.status === "at_repair" || i.status === "partly_returned") && canWriteHostel(i.hostelId)) b.push(ab("return", i.id, "undo", "Record return", "green"));
-  if (M.admin && !i.serialNo && itemHasWarranty(i.itemId)) b.push(ab("setsn", i.id, "tag", "Set Serial No.", "slate"));
   if (M.admin) b.push(isReceived(i)
     ? `<button type="button" class="ab red" disabled title="Received transfers can't be deleted" aria-label="Delete (not allowed)">${ic("trash")}</button>`
     : ab("delissue", i.id, "trash", "Delete", "red"));
@@ -642,7 +639,7 @@ function approvalsView(key) {
     { h: "Sent on", t: (i) => i.at, html: (i) => fmtD(i.at), cls: "nw" },
     { h: "From", t: (i) => hName(i.hostelId), cls: "nw" },
     { h: "To", t: (i) => hName(i.toHostelId), cls: "nw" },
-    { h: "Item", t: (i) => issueItem(i), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.toHostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>${snHint(i)}` },
+    { h: "Item", t: (i) => issueItem(i), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.toHostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>` },
     { h: "UoM", t: (i) => iUnit(i.itemId), cls: "dim" },
     { h: "Send qty", t: (i) => i.qty, num: 1, html: (i) => `<b>${nf(i.qty)}</b>` },
     { h: "Received qty", t: (i) => i.receivedQty ?? "", num: 1, html: recvHtml },
@@ -675,7 +672,7 @@ V.damage = () => {
     { h: "No.", t: (i) => i.no, html: (i) => `<span class="mono">${esc(i.no)}</span>`, cls: "nw" },
     { h: "Date", t: (i) => i.at, html: (i) => fmtD(i.at), cls: "nw" },
     { h: "Unit", t: (i) => hName(i.hostelId), cls: "nw" },
-    { h: "Item", t: (i) => issueItem(i), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>${snHint(i)}` },
+    { h: "Item", t: (i) => issueItem(i), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>` },
     { h: "UoM", t: (i) => iUnit(i.itemId), cls: "dim" },
     { h: "Reported qty", t: (i) => i.qty, num: 1, html: (i) => `<b>${nf(i.qty)}</b>` },
     { h: "Approved qty", t: (i) => i.receivedQty ?? "", num: 1, html: (i) => (i.receivedQty == null ? `<span class="dim">—</span>` : i.receivedQty < i.qty ? `<span class="qout">${nf(i.receivedQty)}</span>` : nf(i.receivedQty)) },
@@ -731,7 +728,7 @@ function repairsView(key, pendingOnly) {
     { h: "No.", t: (i) => i.no, html: (i) => `<span class="mono">${esc(i.no)}</span>`, cls: "nw" },
     { h: "Sent on", t: (i) => i.at, html: (i) => fmtD(i.at), cls: "nw" },
     { h: "Unit", t: (i) => hName(i.hostelId), cls: "nw" },
-    { h: "Item", t: (i) => issueItem(i), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>${snHint(i)}` },
+    { h: "Item", t: (i) => issueItem(i), html: (i) => `<span class="lnk" data-act="ledger" data-h="${i.hostelId}" data-i="${i.itemId}">${esc(issueItem(i))}</span>` },
     { h: "Repair type", t: (i) => i.repairType || "External", html: (i) => `<span class="b ${i.repairType === "Internal" ? "cyan" : "violet"}">${esc(i.repairType || "External")}</span>` },
     { h: "Repairer", t: (i) => i.place || "", cls: "nw" },
     { h: "Sent", t: (i) => i.qty, num: 1 },
@@ -1281,16 +1278,22 @@ function issueForm(kind = "transfer") {
   if (!hs.length) return toast("Add a unit first (Masters → Units).", true);
   const startH = hs[0][0];
   const itemsFor = (h) => S.d.items.filter((i) => available(+h, i.id) > 0);
+  // Item dropdown: a warranty item is listed once per free piece, "DG BIG(221) · DG" (value "itemId|serial").
+  const itemOptsFor = (h) => itemsFor(h).slice().sort((a, b) => cmp(iCat(a.id), iCat(b.id)) || cmp(a.name, b.name)).flatMap((i) => {
+    const sn = itemHasWarranty(i.id) ? freeSerials(+h, i.id) : [];
+    return sn.length ? sn.map((x) => [`${i.id}|${x}`, `${i.name}(${x}) · ${iCat(i.id)}`]) : [[String(i.id), `${i.name} · ${iCat(i.id)}`]];
+  });
+  const iid = (v) => parseInt(v.itemId, 10) || 0;
+  const snOf = (v) => String(v.itemId || "").split("|")[1] || "";
   openForm({
     title: "Issue asset",
     fields: [
       { k: "kind", l: "What is happening?", type: "seg", opts: () => [["transfer", "Transfer", "move"], ["repair", "Repair", "wrench"], ["damage", "Damaged", "alert"]], val: kind },
       { k: "hostelId", l: "From", type: "select", req: 1, opts: () => hs, val: String(startH), show: () => hs.length > 1 },
-      { k: "itemId", l: "Item", type: "select", blank: "— Choose item —", req: 1, opts: (v) => groupedItems(itemsFor(v.hostelId)),
-        help: (v) => (itemsFor(v.hostelId).length ? (v.itemId ? { t: `Available to issue: <b>${nf(available(+v.hostelId, +v.itemId))}</b> ${esc(iUnit(+v.itemId))}`, c: "good" } : "") : { t: "Nothing in stock here to issue yet.", c: "warn" }) },
-      { k: "serialNo", l: "Serial No.", type: "select", req: 1, blank: "— Choose Serial No. —", show: (v) => itemHasWarranty(+v.itemId) && freeSerials(+v.hostelId, +v.itemId).length > 0, opts: (v) => freeSerials(+v.hostelId, +v.itemId).map((x) => [x, x]) },
-      { k: "qty", l: "Quantity", type: "number", req: 1, half: 1, ro: (v) => itemHasWarranty(+v.itemId),
-        help: (v) => (itemHasWarranty(+v.itemId) ? { t: "Warranty item: issued one piece at a time." } : v.qty && v.itemId && +v.qty > available(+v.hostelId, +v.itemId) ? { t: "More than available", c: "warn" } : "") },
+      { k: "itemId", l: "Item", type: "select", blank: "— Choose item —", req: 1, opts: (v) => itemOptsFor(v.hostelId),
+        help: (v) => (itemsFor(v.hostelId).length ? (v.itemId ? { t: `Available to issue: <b>${nf(available(+v.hostelId, iid(v)))}</b> ${esc(iUnit(iid(v)))}`, c: "good" } : "") : { t: "Nothing in stock here to issue yet.", c: "warn" }) },
+      { k: "qty", l: "Quantity", type: "number", req: 1, half: 1, ro: (v) => itemHasWarranty(iid(v)),
+        help: (v) => (itemHasWarranty(iid(v)) ? { t: "Warranty item: issued one piece at a time." } : v.qty && v.itemId && +v.qty > available(+v.hostelId, iid(v)) ? { t: "More than available", c: "warn" } : "") },
       { k: "at", l: "Date", type: "date", req: 1, val: today(), half: 1 },
       { k: "toHostelId", l: "To (unit or warehouse)", type: "select", blank: "— Choose —", req: 1, show: (v) => v.kind === "transfer",
         opts: (v) => locOpts(S.d.hostels.filter((h) => h.active && h.id !== +v.hostelId).map((h) => h.id)) },
@@ -1301,39 +1304,14 @@ function issueForm(kind = "transfer") {
       { k: "notes", l: "Notes", type: "textarea", ph: "Reason, condition, bill…" },
     ],
     onChange: (v, k) => {
-      if (k === "hostelId") { v.itemId = ""; v.toHostelId = ""; v.serialNo = ""; }
-      if (k === "itemId") {
-        v.serialNo = "";
-        if (itemHasWarranty(+v.itemId)) {
-          v.qty = "1";
-          // Only one piece here: pick it straight away.
-          const free = freeSerials(+v.hostelId, +v.itemId);
-          if (free.length === 1) v.serialNo = free[0];
-        }
-      }
+      if (k === "hostelId") { v.itemId = ""; v.toHostelId = ""; }
+      if (k === "itemId" && itemHasWarranty(iid(v))) v.qty = "1";
     },
     submit: "Issue",
     onSubmit: async (v) => {
-      const r = await api("issue.create", { kind: v.kind, hostelId: +v.hostelId, itemId: +v.itemId, qty: +v.qty, at: v.at, toHostelId: v.toHostelId ? +v.toHostelId : null, place: v.kind === "damage" ? v.dplace : v.place, serialNo: itemHasWarranty(+v.itemId) && freeSerials(+v.hostelId, +v.itemId).length ? v.serialNo : "", repairType: v.repairType, expectedAt: v.expectedAt, notes: v.notes });
+      const r = await api("issue.create", { kind: v.kind, hostelId: +v.hostelId, itemId: iid(v), qty: +v.qty, at: v.at, toHostelId: v.toHostelId ? +v.toHostelId : null, place: v.kind === "damage" ? v.dplace : v.place, serialNo: snOf(v), repairType: v.repairType, expectedAt: v.expectedAt, notes: v.notes });
       return v.kind === "transfer" ? `${r.issue.no} sent to ${hName(+v.toHostelId)} for approval` : v.kind === "repair" ? `${r.issue.no}: sent for repair` : `${r.issue.no}: sent for approval (Approvals → Damage)`;
     },
-  });
-}
-
-/* ---------- set Serial No. on an older entry (Admin) ---------- */
-function serialForm(id) {
-  const i = S.d.issues.find((x) => x.id === id);
-  if (!i) return;
-  // Pieces of this item at the unit / warehouse it left from first, then anywhere else; not in another open entry or written off.
-  const busy = new Set(S.d.issues.filter((x) => x.id !== i.id && x.itemId === i.itemId && x.serialNo && (x.status === "pending" || (x.kind === "repair" && (x.status === "at_repair" || x.status === "partly_returned")) || (x.kind === "damage" && x.status === "done"))).map((x) => x.serialNo));
-  const ws = S.d.warranties.filter((w) => w.itemId === i.itemId && w.warrantyNo && !busy.has(w.warrantyNo)).sort((a, b) => (b.hostelId === i.hostelId) - (a.hostelId === i.hostelId) || cmp(a.warrantyNo, b.warrantyNo));
-  const opts = [...new Map(ws.map((w) => [w.warrantyNo, `${w.warrantyNo} · ${w.hostelId ? hName(w.hostelId) : "All units"}`])).entries()];
-  if (!opts.length) return toast(`No Serial No. of ${iName(i.itemId)} is free to choose.`, true);
-  openForm({
-    title: "Set Serial No.", sub: `${esc(i.no)} · ${esc(iName(i.itemId))} · ${esc(hName(i.hostelId))}`,
-    fields: [{ k: "serialNo", l: "Serial No.", type: "select", req: 1, blank: "— Choose Serial No. —", opts: () => opts }],
-    submit: "Save",
-    onSubmit: async (v) => { await api("issue.serial", { id, serialNo: v.serialNo }); return `${i.no}: Serial No. ${v.serialNo} saved`; },
   });
 }
 
@@ -1429,7 +1407,6 @@ const ACT = {
   issue: (el) => issueForm(el.dataset.kind || "transfer"),
   stockin: () => stockForm(),
   bulkup: () => bulkForm(),
-  setsn: (el) => serialForm(+el.dataset.id),
   csv: (el) => downloadCSV(el.dataset.key),
   ftoggle: (el) => { S.fopen[el.dataset.key] = !S.fopen[el.dataset.key]; render(); },
   fchip: (el) => { fv(el.dataset.key)[el.dataset.k] = ""; S.page[el.dataset.key] = 0; render(); },
