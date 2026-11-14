@@ -338,7 +338,7 @@ V.home = () => {
       { v: nf(dmgMonth), l: "Damage This Month", tone: "red", go: "damaged" },
       { v: nf(M.exp30), l: "Warranties expiring in 30 days", tone: M.exp30 ? "red" : "green", go: "warranties" },
     ], true)
-    + `<div class="grid2"><div><div class="card"><div class="ch"><h3>Recent movements</h3><a href="#issues" class="sub">Issue register</a></div>${recentList}</div></div>`
+    + `<div class="grid2"><div><div class="card"><div class="ch"><h3>Recent movements</h3><a href="#issues" class="sub">Out Register</a></div>${recentList}</div></div>`
     + `<div>${hostelBars}<div class="card"><div class="ch"><h3>At repair</h3><a href="#repairs" class="sub">Track repairs</a></div>${repList}</div><div class="card"><div class="ch"><h3>Warranties expiring soon</h3><a href="#warranties" class="sub">All warranties</a></div>${warList}</div></div></div>`;
 };
 function daysBadge(n) {
@@ -524,7 +524,7 @@ V.stock = () => {
     { h: "Entered by", t: (t) => uName(t.createdBy), cls: "dim nw" },
   ];
   if (M.admin) cols.push({ h: "", t: () => "", nocsv: 1, nosort: 1, html: (t) => `<div class="rowacts">${ab("deltxn", t.id, "trash", "Delete", "red")}</div>` });
-  return head("Stock in", "Purchases and opening stock at each unit and warehouse", `${csvBtn("stock")}<button class="btn" data-act="bulkup" title="Opening stock bulk upload">${ic("upload")}<span class="l">Bulk upload</span></button><button class="btn pri" data-act="stockin">${ic("plus")}<span class="l">Add stock</span></button>`)
+  return head("In Register", "Purchases and opening stock at each unit and warehouse", `${csvBtn("stock")}<button class="btn" data-act="bulkup" title="Opening stock bulk upload">${ic("upload")}<span class="l">Bulk upload</span></button><button class="btn pri" data-act="stockin">${ic("plus")}<span class="l">Add stock</span></button>`)
     + stats([
       { v: nf(rows.length), l: "Entries" },
       { v: nf(sum("opening")), l: "Opening quantity", tone: "slate" },
@@ -592,7 +592,7 @@ V.issues = () => {
   const nb = (k) => base.filter((i) => !k || i.kind === k).length;
   const tabs = `<div class="segtabs coltabs" role="tablist">${[["", "All", "list"], ["transfer", "Transfer", "move"], ["repair", "Repair", "wrench"], ["damage", "Damage", "alert"]]
     .map(([k, l, icn]) => `<button type="button" role="tab" class="tk-${k || "all"}${(f.kind || "") === k ? " on" : ""}" aria-selected="${(f.kind || "") === k}" data-act="ftab" data-key="issues" data-k="kind" data-v="${k}">${ic(icn)}${l}<span class="n">${nb(k)}</span></button>`).join("")}</div>`;
-  return head("Issue register", "Every transfer, repair and damage entry", `${csvBtn("issues")}<button class="btn pri" data-act="issue">${ic("plus")}<span class="l">Issue asset</span></button>`)
+  return head("Out Register", "Every transfer, repair and damage entry", `${csvBtn("issues")}<button class="btn pri" data-act="issue">${ic("plus")}<span class="l">Issue asset</span></button>`)
     + stats([
       { v: nf(rows.length), l: "Issues" },
       { v: nf(n("transfer")), l: "Transfers", tone: "violet" },
@@ -1452,8 +1452,8 @@ async function saveSettings(quiet) { await api("settings.save", settingsVals());
 /* =================================================================== shell */
 const NAV = [
   { g: "Overview" }, { v: "home", l: "Dashboard", i: "home" }, { v: "inventory", l: "Inventory", i: "box" },
-  { g: "Operations" }, { v: "stock", l: "Stock in", i: "in" }, { v: "issues", l: "Issue register", i: "send" },
-  { v: "damaged", l: "All Damaged", i: "alert" }, { v: "transfers", l: "All Transfers", i: "move" }, { v: "allrepairs", l: "All Repairs", i: "wrench" },
+  // All Damaged / All Transfers / All Repairs stay reachable by link but are not in the menu.
+  { g: "Operations" }, { v: "stock", l: "In Register", i: "in" }, { v: "issues", l: "Out Register", i: "send" },
   { g: "Approvals Pending" }, { v: "transfer", l: "Transfer", i: "move", n: () => M.incoming.length, hot: 1 },
   { v: "damage", l: "Damage", i: "alert", n: () => M.dmgPending.length, hot: 1 },
   { v: "repairs", l: "Repair", i: "wrench", n: () => M.openRepairs.length },
@@ -1515,7 +1515,7 @@ function route() {
   if (legacy[h]) { history.replaceState(null, "", "#" + legacy[h]); h = legacy[h]; }
   const [v, arg] = h.split("?");
   const nav = NAV.find((n) => n.v === v);
-  S.view = nav && (!nav.admin || M.admin) ? v : "home";
+  S.view = V[v] && (!nav || !nav.admin || M.admin) ? v : "home";
   if (arg && (S.view === "repairs" || S.view === "allrepairs")) S.f[S.view] = { st: arg };
   if (arg && S.view === "warranties") S.f.warranties = { st: arg };
   if (arg) history.replaceState(null, "", "#" + S.view);
