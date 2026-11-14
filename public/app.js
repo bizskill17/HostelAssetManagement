@@ -873,7 +873,7 @@ const MASTERS = {
       { k: "foundationId", l: "Foundation", type: "select", req: 1, half: 1, opts: () => S.d.foundations.map((f) => [f.id, f.name]), blank: "— Choose foundation —", val: () => (S.d.foundations.length === 1 ? String(S.d.foundations[0].id) : "") },
       { k: "unitType", l: "Unit type", type: "seg", half: 1, opts: () => [["Hostel", "Hostel"], ["College", "College"]], val: "Hostel" },
       { k: "address", l: "Address / location" },
-      { k: "tgChat", l: "Telegram group ID", ph: "-1001234567890", help: () => "This unit's own group gets only this unit's messages. Leave blank to use only the main and Foundation groups." },
+      { k: "tgChat", l: "Telegram group ID", ph: "-1001234567890" },
       { k: "active", l: "Active (can receive transfers)", type: "check", val: true }],
   },
   items: {
